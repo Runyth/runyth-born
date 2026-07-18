@@ -209,6 +209,8 @@ The included GitHub Actions workflow tests the project and builds static executa
 
 Pushing a tag such as `v0.1.0` also uploads those binaries to the GitHub release.
 
+The workflow deliberately disables `setup-go` dependency caching because the project uses only the Go standard library and therefore has no `go.sum` file.
+
 ## Deliberate boundaries
 
 - This is a terminal wizard, not a graphical desktop application.
