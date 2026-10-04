@@ -7,7 +7,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/Akkitto/template-wizard/internal/mdast"
+	"github.com/Akkitto/template-wizard-web/internal/mdast"
 )
 
 func Render(document mdast.Document) (string, error) {
@@ -401,12 +401,8 @@ func escapeText(value string, context inlineContext) string {
 	var builder strings.Builder
 	for _, character := range value {
 		switch character {
-		case '\\', '*', '[', ']', '<', '>':
+		case '\\', '`', '*', '_', '[', ']', '<', '>', '~', '#', '+', '-', '=', '!', '.', '(', ')', '{', '}':
 			builder.WriteByte('\\')
-			builder.WriteRune(character)
-		case '_':
-			// Underscores inside ordinary words do not need escaping and keeping them
-			// untouched makes URLs and identifiers easier to read.
 			builder.WriteRune(character)
 		case '|':
 			if context.tableCell {
@@ -425,7 +421,7 @@ func renderInlineCode(value string) string {
 	delimiterLength := maximumRun(value, '`') + 1
 	delimiter := strings.Repeat("`", delimiterLength)
 	padding := ""
-	if strings.HasPrefix(value, "`") || strings.HasSuffix(value, "`") || strings.HasPrefix(value, " ") || strings.HasSuffix(value, " ") {
+	if strings.HasPrefix(value, "`") || strings.HasSuffix(value, "`") || (strings.Trim(value, " ") != "" && (strings.HasPrefix(value, " ") || strings.HasSuffix(value, " "))) {
 		padding = " "
 	}
 	return delimiter + padding + value + padding + delimiter

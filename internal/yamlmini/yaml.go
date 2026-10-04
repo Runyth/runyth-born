@@ -3,6 +3,7 @@ package yamlmini
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"strconv"
 	"strings"
 	"unicode"
@@ -130,9 +131,6 @@ func (p *parser) parseSequence(indent int) ([]any, error) {
 					if continuationIndent != indent+2 {
 						return nil, p.errorAt(p.index, fmt.Sprintf("expected sequence mapping continuation at indentation %d, found %d", indent+2, continuationIndent))
 					}
-					if _, ok := item["__yamlmini_impossible__"]; ok {
-						panic("unreachable")
-					}
 					parsed, err := p.parseMapping(indent+2, item)
 					if err != nil {
 						return nil, err
@@ -204,6 +202,9 @@ func (p *parser) parseMapping(indent int, initial map[string]any) (map[string]an
 }
 
 func (p *parser) assignMappingValue(target map[string]any, key string, rawValue string, childIndent int) error {
+	if key == "<<" {
+		return p.errorAt(max(0, p.index-1), "YAML merge keys are not supported")
+	}
 	rawValue = strings.TrimSpace(rawValue)
 
 	if isBlockScalarHeader(rawValue) {
@@ -350,9 +351,13 @@ func parseScalar(raw string) (any, error) {
 		var decoded any
 		decoder := json.NewDecoder(strings.NewReader(value))
 		decoder.UseNumber()
-		if err := decoder.Decode(&decoded); err == nil {
-			return decoded, nil
+		if err := decoder.Decode(&decoded); err != nil {
+			return nil, fmt.Errorf("invalid inline JSON value: %w", err)
 		}
+		if err := decoder.Decode(new(any)); err != io.EOF {
+			return nil, fmt.Errorf("inline JSON value contains trailing content")
+		}
+		return decoded, nil
 	}
 
 	if strings.HasPrefix(value, "\"") {

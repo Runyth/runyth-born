@@ -1,0 +1,11 @@
+{
+  "name": "template-wizard-web-checks",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test:browser": "node tests/browser/smoke.mjs dist"
+  },
+  "devDependencies": {
+    "playwright": "1.63.0"
+  }
+}

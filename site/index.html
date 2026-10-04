@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Fill structured Markdown templates entirely in your browser.">
+  <meta name="referrer" content="no-referrer">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'self'; connect-src 'self'; font-src 'self'; form-action 'self'; img-src 'self' data:; object-src 'none'; script-src 'self'; style-src 'self'">
+  <title>Template Wizard</title>
+  <link rel="stylesheet" href="./assets/app.css">
+  <script type="module" src="./assets/home.js"></script>
+</head>
+<body class="home-page">
+  <header class="site-header">
+    <div class="shell header-inner">
+      <a class="brand" href="./index.html" aria-label="Template Wizard home">
+        <span class="brand-mark" aria-hidden="true">TW</span>
+        <span>
+          <strong>Template Wizard</strong>
+          <small>Static browser edition</small>
+        </span>
+      </a>
+      <a class="text-link" href="./ai-template-prompt.txt">AI template prompt</a>
+    </div>
+  </header>
+
+  <main class="shell home-main">
+    <section class="hero">
+      <p class="eyebrow">Static · private · no server required</p>
+      <h1>Choose a template and answer it cleanly.</h1>
+      <p>Your questionnaire is saved locally in your browser. When finished, download one correctly formatted Markdown file and send it to your Dungeon Master.</p>
+    </section>
+
+    <div class="notice notice-error" id="template-error" hidden role="alert"></div>
+
+    <section aria-labelledby="templates-title">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">Available questionnaires</p>
+          <h2 id="templates-title">Templates</h2>
+        </div>
+      </div>
+
+      <div id="template-loading" class="loading-state">Loading static template catalog…</div>
+      <div id="template-grid" class="template-grid" aria-busy="true"></div>
+      <div id="template-empty" class="empty-state" hidden>
+        <h3>No valid templates are published.</h3>
+        <p>Add an mdast JSON or YAML file to <code>templates/</code>, then rebuild or redeploy the static site.</p>
+      </div>
+    </section>
+
+    <section id="recent-section" class="recent-section" hidden aria-labelledby="recent-title">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">This browser</p>
+          <h2 id="recent-title">Resume recent work</h2>
+        </div>
+      </div>
+      <div id="recent-list" class="recent-list"></div>
+    </section>
+
+    <section class="privacy-note">
+      <h2>How saving works</h2>
+      <p>Normal autosaves remain only in this browser. “Copy resume link” creates a self-contained compressed snapshot in the URL fragment so it can be opened on another device without a backend. The link contains your answers and is not encrypted, so treat it as private.</p>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="shell">Template Wizard Web <span id="app-version">2.0.0</span></div>
+  </footer>
+
+  <noscript>
+    <div class="noscript">This wizard requires JavaScript for local saving and navigation.</div>
+  </noscript>
+</body>
+</html>

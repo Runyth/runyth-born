@@ -62,3 +62,18 @@ func TestRejectsAnchors(t *testing.T) {
 		t.Fatal("Parse() error = nil, want unsupported anchor error")
 	}
 }
+
+func TestSequenceMappingCannotPanic(t *testing.T) {
+	_, err := Parse([]byte("- __yamlmini_impossible__: allowed\n  type: root\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestRejectsMergeKeysAndTrailingInlineJSON(t *testing.T) {
+	for _, source := range []string{"- <<: {}\n", "children: [] trailing\n", "children: [broken\n"} {
+		if _, err := Parse([]byte(source)); err == nil {
+			t.Fatalf("accepted invalid input %q", source)
+		}
+	}
+}

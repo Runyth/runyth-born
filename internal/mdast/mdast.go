@@ -5,13 +5,14 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
 
-	"github.com/Akkitto/template-wizard/internal/yamlmini"
+	"github.com/Akkitto/template-wizard-web/internal/yamlmini"
 )
 
 type Document map[string]any
@@ -33,20 +34,34 @@ func LoadFile(path string) (Document, error) {
 		return nil, fmt.Errorf("read template %q: %w", path, err)
 	}
 
-	extension := strings.ToLower(filepath.Ext(path))
+	document, err := Parse(data, filepath.Ext(path))
+	if err != nil {
+		return nil, fmt.Errorf("parse template %q: %w", path, err)
+	}
+	return document, nil
+}
+
+// Parse decodes and validates one mdast document from JSON or the supported
+// JSON-compatible YAML subset. The extension must be .json, .yaml, or .yml.
+func Parse(data []byte, extension string) (Document, error) {
+	extension = strings.ToLower(strings.TrimSpace(extension))
 	var decoded any
+	var err error
 
 	switch extension {
-	case ".json":
+	case ".json", "json":
 		decoder := json.NewDecoder(strings.NewReader(string(data)))
 		decoder.UseNumber()
 		if err := decoder.Decode(&decoded); err != nil {
-			return nil, fmt.Errorf("decode JSON template %q: %w", path, err)
+			return nil, fmt.Errorf("decode JSON template: %w", err)
 		}
-	case ".yaml", ".yml":
+		if err := decoder.Decode(new(any)); err != io.EOF {
+			return nil, fmt.Errorf("JSON template must contain exactly one document")
+		}
+	case ".yaml", ".yml", "yaml", "yml":
 		decoded, err = yamlmini.Parse(data)
 		if err != nil {
-			return nil, fmt.Errorf("decode YAML template %q: %w", path, err)
+			return nil, fmt.Errorf("decode YAML template: %w", err)
 		}
 	default:
 		return nil, fmt.Errorf("unsupported template extension %q; expected .json, .yaml, or .yml", extension)
@@ -54,14 +69,13 @@ func LoadFile(path string) (Document, error) {
 
 	root, ok := decoded.(map[string]any)
 	if !ok {
-		return nil, fmt.Errorf("template %q does not contain an mdast root object", path)
+		return nil, fmt.Errorf("template does not contain an mdast root object")
 	}
 
 	document := Document(root)
 	if err := Validate(document); err != nil {
-		return nil, fmt.Errorf("invalid mdast template %q: %w", path, err)
+		return nil, fmt.Errorf("invalid mdast template: %w", err)
 	}
-
 	return document, nil
 }
 
@@ -192,29 +206,40 @@ func MergeAnswers(document Document, saved []Question) (int, error) {
 	fallbackCurrent := map[string]int{}
 	for _, answer := range saved {
 		byID[answer.ID] = answer
-		fallbackSaved[answer.FallbackID] = append(fallbackSaved[answer.FallbackID], answer)
+		key := fallbackLabel(answer)
+		fallbackSaved[key] = append(fallbackSaved[key], answer)
 	}
 	for _, question := range current {
-		fallbackCurrent[question.FallbackID]++
+		fallbackCurrent[fallbackLabel(question)]++
 	}
 
 	merged := 0
 	for _, question := range current {
 		selected, ok := byID[question.ID]
-		if !ok && fallbackCurrent[question.FallbackID] == 1 && len(fallbackSaved[question.FallbackID]) == 1 {
-			selected = fallbackSaved[question.FallbackID][0]
+		key := fallbackLabel(question)
+		if !ok && fallbackCurrent[key] == 1 && len(fallbackSaved[key]) == 1 {
+			selected = fallbackSaved[key][0]
 			ok = true
 		}
-		if !ok || selected.Answer == "" {
+		if !ok {
 			continue
 		}
 		if err := SetAnswer(document, question, selected.Answer); err != nil {
 			return merged, err
 		}
-		merged++
+		if selected.Answer != "" {
+			merged++
+		}
 	}
 
 	return merged, nil
+}
+
+func fallbackLabel(question Question) string {
+	if index := strings.LastIndex(question.FallbackID, "#"); index >= 0 {
+		return question.FallbackID[:index]
+	}
+	return question.FallbackID
 }
 
 func PlainText(node map[string]any) string {
@@ -253,6 +278,8 @@ type questionScanner struct {
 
 func (scanner *questionScanner) walk(node map[string]any, path []int, insideListItem bool) {
 	switch nodeType(node) {
+	case "blockquote", "table", "code", "html", "footnoteDefinition":
+		return
 	case "heading":
 		depth := intValue(node, "depth", 1)
 		if depth < 1 {
@@ -279,6 +306,9 @@ func (scanner *questionScanner) walk(node map[string]any, path []int, insideList
 		return
 
 	case "listItem":
+		if _, checked := node["checked"].(bool); checked {
+			return
+		}
 		if paragraph, paragraphPath, ok := questionParagraph(node, path); ok {
 			scanner.addQuestion(paragraph, paragraphPath)
 

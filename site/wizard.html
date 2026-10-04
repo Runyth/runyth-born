@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow, noarchive">
+  <meta name="referrer" content="no-referrer">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'self'; connect-src 'self'; font-src 'self'; form-action 'self'; img-src 'self' data:; object-src 'none'; script-src 'self'; style-src 'self'">
+  <title>Template Wizard</title>
+  <link rel="stylesheet" href="./assets/app.css">
+  <script type="module" src="./assets/wizard.js"></script>
+</head>
+<body class="wizard-page">
+  <header class="wizard-header">
+    <a class="brand compact" href="./index.html">
+      <span class="brand-mark" aria-hidden="true">TW</span>
+      <span><strong>Template Wizard</strong></span>
+    </a>
+    <div class="wizard-title">
+      <strong id="wizard-template-name">Loading…</strong>
+      <span id="wizard-player-name" hidden></span>
+    </div>
+    <div class="header-actions">
+      <button class="button button-quiet" id="copy-link" type="button">Copy resume link</button>
+      <button class="button button-quiet" id="open-help" type="button">Help</button>
+    </div>
+  </header>
+
+  <div class="wizard-layout" id="wizard-app" aria-busy="true">
+    <aside class="toc" id="toc" aria-label="Questionnaire sections">
+      <div class="toc-header">
+        <span>Contents</span>
+        <button class="icon-button mobile-only" id="close-toc" type="button" aria-label="Close contents">×</button>
+      </div>
+      <nav id="section-list"></nav>
+      <div class="toc-footer">
+        <div class="overall-progress" aria-label="Overall progress">
+          <span id="overall-count">0 of 0 answered</span>
+          <progress id="overall-progress" max="100" value="0">0%</progress>
+        </div>
+      </div>
+    </aside>
+
+    <main class="question-area">
+      <div class="question-toolbar">
+        <button class="button button-quiet mobile-only" id="open-toc" type="button">Contents</button>
+        <div class="save-status" id="save-status" role="status" aria-live="polite">Loading…</div>
+      </div>
+
+      <article class="question-card" id="question-card" hidden>
+        <div class="question-position">
+          <span id="question-number">Question</span>
+          <span id="question-section"></span>
+        </div>
+
+        <div id="question-context" class="question-context"></div>
+
+        <section class="active-question" aria-labelledby="question-label">
+          <p class="active-question-kicker">Your question</p>
+          <h1 id="question-label"></h1>
+        </section>
+
+        <label class="answer-field" for="answer">
+          <span>Your answer</span>
+          <textarea id="answer" rows="7" maxlength="65536" placeholder="Type your answer here…"></textarea>
+        </label>
+
+        <p class="input-hint">Your answer is saved automatically in this browser. Line breaks are preserved in the final Markdown file.</p>
+
+        <div class="question-navigation">
+          <button class="button button-secondary" id="previous-question" type="button">← Previous</button>
+          <button class="button button-primary" id="next-question" type="button">Next →</button>
+        </div>
+      </article>
+
+      <div class="notice notice-error" id="fatal-error" hidden role="alert"></div>
+
+      <section class="finish-panel">
+        <div>
+          <h2>Need the Markdown file?</h2>
+          <p>You can download the current version at any time, or mark the questionnaire as finished and download it.</p>
+        </div>
+        <div class="finish-actions">
+          <button class="button button-secondary" id="download-markdown" type="button">Download current Markdown</button>
+          <button class="button button-success" id="finish-download" type="button">Finish and download</button>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <div class="toast" id="toast" hidden role="status" aria-live="polite"></div>
+
+  <dialog id="finish-dialog" class="finish-dialog" aria-labelledby="finish-dialog-title">
+    <form method="dialog">
+      <div class="dialog-header">
+        <div>
+          <p class="dialog-kicker">Questionnaire complete</p>
+          <h2 id="finish-dialog-title">Finished</h2>
+        </div>
+        <button class="icon-button" value="close" aria-label="Close finish dialog">×</button>
+      </div>
+      <div class="finish-dialog-body">
+        <section class="finish-dialog-section">
+          <span class="finish-step" aria-hidden="true">1</span>
+          <div>
+            <h3>Send the Markdown file to your Dungeon Master</h3>
+            <p>Your completed Markdown file has been downloaded. Share that file with your Dungeon Master so it can be used as your finished questionnaire or backstory.</p>
+          </div>
+        </section>
+        <section class="finish-dialog-section">
+          <span class="finish-step" aria-hidden="true">2</span>
+          <div>
+            <h3>Keep your portable resume link</h3>
+            <p>The link contains a compressed snapshot of your current answers and can be opened on another device without a server.</p>
+            <div class="resume-link-box">
+              <input id="finish-resume-link" type="text" readonly aria-label="Portable private resume link">
+              <button class="button button-secondary" id="finish-copy-link" type="button">Copy</button>
+            </div>
+            <p class="resume-warning">The resume fragment is not sent to GitHub Pages, but it is not encrypted. Anyone who receives the complete link can read the imported answers.</p>
+          </div>
+        </section>
+      </div>
+      <div class="finish-dialog-actions">
+        <button class="button button-primary" value="close">Done</button>
+      </div>
+    </form>
+    <div class="toast" id="finish-toast" hidden role="status" aria-live="polite"></div>
+  </dialog>
+
+  <dialog id="help-dialog" class="help-dialog">
+    <form method="dialog">
+      <div class="dialog-header">
+        <h2>Using the wizard</h2>
+        <button class="icon-button" value="close" aria-label="Close help">×</button>
+      </div>
+      <div class="dialog-body">
+        <dl class="shortcut-list">
+          <div><dt>Previous / Next</dt><dd>Use the buttons, the section list, or <kbd>Alt</kbd> + <kbd>←</kbd>/<kbd>→</kbd>.</dd></div>
+          <div><dt>Autosave</dt><dd>Typing pauses briefly, then the questionnaire is saved locally in this browser.</dd></div>
+          <div><dt>Resume here</dt><dd>The normal wizard URL resumes from this browser's local storage.</dd></div>
+          <div><dt>Resume elsewhere</dt><dd>Use “Copy resume link” to create a self-contained snapshot URL for another browser or device.</dd></div>
+          <div><dt>Finish</dt><dd>The final button saves locally, marks the questionnaire complete, and downloads the Markdown file.</dd></div>
+        </dl>
+      </div>
+    </form>
+  </dialog>
+
+  <noscript>
+    <div class="noscript">This wizard requires JavaScript for local saving and navigation.</div>
+  </noscript>
+</body>
+</html>

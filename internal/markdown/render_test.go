@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Akkitto/template-wizard/internal/mdast"
+	"github.com/Akkitto/template-wizard-web/internal/mdast"
 )
 
 func TestRenderPlacesAnswerOutsideBoldQuestion(t *testing.T) {
@@ -108,5 +108,16 @@ func TestRenderNestedListAndMultilineAnswer(t *testing.T) {
 	}
 	if !strings.Contains(output, "- Parent\n  - Child  \n    Second line") {
 		t.Fatalf("unexpected nested list output:\n%s", output)
+	}
+}
+
+func TestLiteralTextCannotBecomeMarkdownStructure(t *testing.T) {
+	input := "_literal_ `code`\n# heading\n- list"
+	want := "\\_literal\\_ \\`code\\`\n\\# heading\n\\- list"
+	if got := escapeText(input, inlineContext{}); got != want {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+	if got := renderInlineCode("   "); got != "`   `" {
+		t.Fatalf("space-only inline code changed: %q", got)
 	}
 }

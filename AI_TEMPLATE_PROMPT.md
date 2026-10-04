@@ -1,6 +1,6 @@
-You are creating a reusable Markdown questionnaire template for **Template Wizard**.
+You are creating a reusable Markdown questionnaire template for **Template Wizard Web**.
 
-Template Wizard does not read the Markdown source directly. The template author will first convert the Markdown to raw mdast JSON or YAML with `markdown-rs-cli`, then distribute that parsed template beside the Template Wizard executable. The wizard discovers fillable questions from the mdast structure and writes the user's answers into a normal Markdown file.
+Template Wizard Web does not read the Markdown source directly. The template author will first convert the Markdown to raw mdast JSON or YAML with `markdown-rs-cli`, then commit that parsed template to the repository's `templates/` directory. The static browser wizard discovers fillable questions from the mdast structure and writes each player's answers into a normal Markdown file.
 
 Create the requested template while obeying every rule below.
 
@@ -60,7 +60,7 @@ Invalid questions:
 - Before the label **Name:**
 ```
 
-Template Wizard writes the answer after the bold label, producing this filled result:
+Template Wizard Web writes the answer after the bold label, producing this filled result:
 
 ```markdown
 - **Name:** Lilith

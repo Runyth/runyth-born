@@ -1,6 +1,76 @@
 package mdast
 
-import "testing"
+import (
+	"encoding/json"
+	"testing"
+)
+
+func TestRejectTrailingJSON(t *testing.T) {
+	for _, suffix := range []string{"{}", "garbage"} {
+		if _, err := Parse([]byte(`{"type":"root","children":[]}`+suffix), ".json"); err == nil {
+			t.Fatal("accepted trailing JSON content")
+		}
+	}
+}
+
+func TestQuestionExclusions(t *testing.T) {
+	document := sampleDocument()
+	list := document["children"].([]any)[3]
+	document["children"] = []any{
+		map[string]any{"type": "blockquote", "children": []any{list}},
+		map[string]any{"type": "table", "children": []any{list}},
+	}
+	questions, err := ExtractQuestions(document)
+	if err != nil || len(questions) != 0 {
+		t.Fatalf("questions in excluded contexts: %v, %v", questions, err)
+	}
+	item := questionListItem("Task:")
+	item["checked"] = false
+	document["children"] = []any{map[string]any{"type": "list", "children": []any{item}}}
+	questions, err = ExtractQuestions(document)
+	if err != nil || len(questions) != 0 {
+		t.Fatalf("task interpreted as question: %v, %v", questions, err)
+	}
+}
+
+func TestMergeClearedDefaultAndAmbiguousLabels(t *testing.T) {
+	document := sampleDocument()
+	questions, _ := ExtractQuestions(document)
+	if err := SetAnswer(document, questions[0], "Default"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := MergeAnswers(document, []Question{questions[0]}); err != nil {
+		t.Fatal(err)
+	}
+	updated, _ := ExtractQuestions(document)
+	if updated[0].Answer != "" {
+		t.Fatal("cleared answer restored default")
+	}
+	// Both occurrences are ambiguous even though their ordinal fallback IDs differ.
+	root := document["children"].([]any)
+	root[3].(map[string]any)["children"] = []any{questionListItem("Name:"), questionListItem("Name:")}
+	questions, _ = ExtractQuestions(document)
+	saved := questions[0]
+	saved.ID = "moved-section#1"
+	saved.Answer = "Wrong answer"
+	if _, err := MergeAnswers(document, []Question{saved}); err != nil {
+		t.Fatal(err)
+	}
+	updated, _ = ExtractQuestions(document)
+	if updated[0].Answer != "" || updated[1].Answer != "" {
+		t.Fatal("ambiguous label fallback copied an answer")
+	}
+}
+
+func TestParseSingleJSONRoundTrip(t *testing.T) {
+	encoded, err := json.Marshal(sampleDocument())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Parse(encoded, ".json"); err != nil {
+		t.Fatal(err)
+	}
+}
 
 func TestExtractAndSetAnswers(t *testing.T) {
 	document := sampleDocument()

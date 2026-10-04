@@ -1,16 +1,12 @@
 # Template Format
 
-The complete AI authoring prompt can be printed from any built executable:
+Template Wizard Web reads raw mdast documents from the repository `templates/` directory. Supported file extensions are `.json`, `.yaml`, and `.yml`.
 
-```bash
-template-wizard --ai-template-prompt
-```
+The build validates templates and generates the static `dist/templates/catalog.json` and `*.compiled.json` files automatically. Only generated JSON and plain JavaScript are needed at runtime; Go is a build-time tool. A template change therefore requires a rebuild/redeployment; there is no runtime directory scan in 2.x.
 
-Its source is embedded from `internal/prompt/template-authoring-prompt.md`.
+## Required mdast root
 
-## Input root
-
-The input must be a raw mdast document with a root object resembling:
+The top-level value must be an mdast root object with a `children` array:
 
 ```json
 {
@@ -19,137 +15,76 @@ The input must be a raw mdast document with a root object resembling:
 }
 ```
 
-The program accepts the same object structure in JSON-compatible YAML.
+## Fillable question convention
 
-## Recognised questions
-
-A question must be represented by a list item whose first block is a paragraph and whose first meaningful inline node is bold text ending in a colon.
-
-Example Markdown:
+A fillable question must be the first paragraph inside a list item and begin with a `strong` node whose plain text ends in a colon. In ordinary Markdown, write:
 
 ```markdown
 - **Name:**
+- **Age:**
+- **Origin - What culture or community raised me?:**
 ```
 
-Relevant mdast shape:
+The answer is inserted after the bold label, never inside it.
 
-```json
-{
-  "type": "listItem",
-  "children": [
-    {
-      "type": "paragraph",
-      "children": [
-        {
-          "type": "strong",
-          "children": [
-            {
-              "type": "text",
-              "value": "Name:"
-            }
-          ]
-        }
-      ]
-    }
-  ]
-}
-```
+Questions inside blockquotes, tables, code, HTML, footnote definitions, and task list items are excluded.
 
-An existing answer may already follow the bold node:
-
-```json
-{
-  "type": "text",
-  "value": " Lilith"
-}
-```
-
-The wizard replaces only the answer portion. The bold prompt itself is preserved.
-
-## Structure and guidance
-
-The scanner tracks headings from depth 1 through 6. They become the breadcrumb shown above each question.
-
-Explanatory paragraphs and ordinary non-question bullets in the current section become guidance text. This lets the template retain instructions such as:
+Existing answer text is recognised too:
 
 ```markdown
-### Local Problems
-
-Add one to three small problems suitable for a level 1-3 party.
-
-- missing livestock;
-- thefts or smuggling;
-
-- **Problem 1:**
+- **Name:** Akito
 ```
 
-## Stable answer merging
+## Sections and context
 
-The local answer-state file records each answer by:
+Headings establish the current breadcrumb. Question sections are derived from that breadcrumb. Ordinary paragraphs and non-question list items before a question are carried into the guided UI as context, with a bounded recent-context window.
 
-1. heading breadcrumb;
-2. question label;
-3. occurrence number.
+Example:
 
-When a new template version changes a section heading, the wizard may fall back to a globally unique label and occurrence match. This allows many template revisions to retain existing answers.
+```markdown
+# Character Backstory
 
-Changing a question label intentionally makes it a new question unless the old and new labels still match through the fallback rules.
+## Core
 
-## Explicitly rendered block nodes
+Brief answers are sufficient.
 
-- `root`
-- `heading`
-- `paragraph`
-- `thematicBreak`
-- `blockquote`
-- `list`
-- `listItem`
-- `code`
-- `html`
-- `definition`
-- `footnoteDefinition`
-- `table`
-- `tableRow`
-- `tableCell`
-- `yaml`
-- `math`
+- **Name:**
+- **Age:**
 
-## Explicitly rendered inline nodes
+## Origin
 
-- `text`
-- `strong`
-- `emphasis`
-- `delete`
-- `inlineCode`
-- `break`
-- `link`
-- `linkReference`
-- `image`
-- `imageReference`
-- `footnoteReference`
-- `html`
-- `inlineMath`
+Describe what shaped the character before adventuring.
 
-Unknown container nodes fall back to rendering their `children`. Unknown literal nodes fall back to their `value` string.
+- **Where were you raised?:**
+```
 
-## YAML subset
+## Stable template evolution
 
-The built-in YAML reader supports:
+Saved answers are reconciled with compatible newer template revisions using:
 
-- indentation-based mappings;
-- indentation-based sequences;
-- plain, single-quoted, and double-quoted scalars;
-- booleans, null, integers, and floating-point values;
-- inline JSON arrays and objects;
-- literal `|` and folded `>` block scalars;
-- document markers.
+1. heading breadcrumb + question label + occurrence;
+2. unique label-based fallback.
 
-It intentionally rejects:
+For safe evolution:
 
-- anchors;
-- aliases;
-- custom tags;
-- merge keys;
-- tab indentation.
+- keep the template filename stable;
+- keep a heading stable when its semantic section is unchanged;
+- keep a question label stable when its meaning is unchanged;
+- add new questions rather than repurposing old labels;
+- avoid duplicate labels unless the surrounding breadcrumb clearly distinguishes them.
 
-JSON remains the preferred distribution format because it is exactly what `markdown-rs-cli` emits and has less ambiguity.
+Renaming or removing the template file can make existing local sessions and portable resume links unable to locate their template.
+
+## Creating mdast from Markdown
+
+`markdown-rs-cli` can convert ordinary Markdown into mdast JSON:
+
+```bash
+markdown-rs-cli \
+  --from markdown \
+  --dialect gfm \
+  character-backstory.md \
+  --output character-backstory.mdast.json
+```
+
+Commit the resulting file to `templates/`, then run `make check` or push to `master` so GitHub Actions validates and redeploys the static catalog.
