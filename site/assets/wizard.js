@@ -2,7 +2,17 @@
 
 import { buildResumeURL, decodeResumePayload, resumePayloadFromLocation } from "./portable.js";
 import { callCore } from "./runtime.js";
-import { loadSession, saveSession } from "./storage.js";
+import {
+  deleteRecovery,
+  deleteSession,
+  loadRecovery,
+  loadSession,
+  normalizeRevision,
+  saveRecovery,
+  saveSession,
+  saveSessionPosition,
+  StorageConflictError,
+} from "./storage.js";
 
 const elements = {
   app: document.getElementById("wizard-app"),
@@ -32,6 +42,14 @@ const elements = {
   finishDialog: document.getElementById("finish-dialog"),
   finishResumeLink: document.getElementById("finish-resume-link"),
   finishCopyLink: document.getElementById("finish-copy-link"),
+  finishDelete: document.getElementById("finish-delete"),
+  reconcileNotice: document.getElementById("reconcile-notice"),
+  reconcileText: document.getElementById("reconcile-text"),
+  reviewPreserved: document.getElementById("review-preserved"),
+  orphanDialog: document.getElementById("orphan-dialog"),
+  orphanList: document.getElementById("orphan-list"),
+  orphanCopy: document.getElementById("orphan-copy"),
+  orphanDiscard: document.getElementById("orphan-discard"),
   title: document.getElementById("wizard-template-name"),
   player: document.getElementById("wizard-player-name"),
 };
@@ -49,6 +67,10 @@ let persistedRevision = 0;
 let toastTimer = null;
 let navigating = false;
 let ready = false;
+let preservedEntries = [];
+let deleteArmed = false;
+
+const CONFLICT_STATUS = "A newer version was saved elsewhere — reload to refresh";
 
 function enableActions(enabled) {
   ready = enabled;
@@ -238,6 +260,7 @@ function flushSave() {
     .then(async () => {
       const saved = await saveSession(snapshot);
       session.updated_at = saved.updated_at;
+      session.revision = saved.revision;
       persistedRevision = Math.max(persistedRevision, revision);
       dirty = editRevision > persistedRevision;
       setSaveStatus(
@@ -246,6 +269,11 @@ function flushSave() {
       );
     })
     .catch((error) => {
+      if (error instanceof StorageConflictError) {
+        void preserveRecovery(session.id, "conflict", session.questions).catch(() => undefined);
+        setSaveStatus(CONFLICT_STATUS, "conflict");
+        return;
+      }
       setSaveStatus("Local save failed", "error");
       showToast(`Could not save locally: ${error.message}`);
       throw error;
@@ -255,7 +283,7 @@ function flushSave() {
 
 async function persistPosition() {
   session.current_question = currentIndex;
-  await saveSession(session);
+  await saveSessionPosition(session.id, currentIndex);
 }
 
 async function navigateTo(index) {
@@ -350,6 +378,10 @@ async function showFinishDialog() {
   if (!elements.finishDialog) {
     return;
   }
+  deleteArmed = false;
+  if (elements.finishDelete) {
+    elements.finishDelete.textContent = "Delete local copy";
+  }
   elements.finishResumeLink.value = "Preparing portable resume link…";
   elements.finishDialog.showModal();
   try {
@@ -370,7 +402,9 @@ async function download(finish) {
       elements.finish.disabled = true;
       elements.next.disabled = true;
       session.completed = true;
-      await saveSession(session);
+      const saved = await saveSession(session);
+      session.revision = saved.revision;
+      session.updated_at = saved.updated_at;
       elements.finish.textContent = "Finished";
       if (currentIndex === session.questions.length - 1) {
         elements.next.textContent = "Finished";
@@ -388,6 +422,28 @@ async function download(finish) {
   } finally {
     elements.finish.disabled = false;
     elements.next.disabled = false;
+  }
+}
+
+async function deleteLocalCopy() {
+  if (!session) { return; }
+  if (!deleteArmed) {
+    deleteArmed = true;
+    if (elements.finishDelete) {
+      elements.finishDelete.textContent = "Confirm delete";
+    }
+    return;
+  }
+  try {
+    await deleteSession(session.id);
+    elements.finishDialog?.close();
+    window.location.assign("./index.html");
+  } catch (error) {
+    deleteArmed = false;
+    if (elements.finishDelete) {
+      elements.finishDelete.textContent = "Delete local copy";
+    }
+    showToast(`Could not delete the local copy: ${error.message}`);
   }
 }
 
@@ -443,11 +499,144 @@ async function importPortableSession() {
 
   const imported = await decodeResumePayload(payload);
   const existing = await loadSession(imported.id);
-  const importedTime = Date.parse(imported.updated_at || "") || 0;
-  const existingTime = Date.parse(existing?.updated_at || "") || 0;
-  const selected = existing && existing.template_filename === imported.template_filename
-    && existingTime > importedTime ? existing : imported;
-  return selected;
+  if (!existing || existing.template_filename !== imported.template_filename) {
+    return { session: imported, storedAlready: false };
+  }
+
+  // Revisions, not wall clocks, decide which divergent copy is newer (F03).
+  const existingRevision = normalizeRevision(existing.revision);
+  const importedRevision = normalizeRevision(imported.revision);
+  if (importedRevision > existingRevision) {
+    if (sessionsDiverge(existing, imported)) {
+      await preserveRecovery(imported.id, "import", [existing]);
+    }
+    return { session: imported, storedAlready: false };
+  }
+  if (importedRevision === existingRevision && sessionsDiverge(existing, imported)) {
+    await preserveRecovery(imported.id, "import", [imported]);
+    return { session: existing, storedAlready: true };
+  }
+  return { session: existing, storedAlready: true };
+}
+
+function sessionsDiverge(left, right) {
+  if (String(left.player_name || "") !== String(right.player_name || "")) {
+    return true;
+  }
+  if (Boolean(left.completed) !== Boolean(right.completed)) {
+    return true;
+  }
+  const leftAnswers = new Map((left.questions || []).map((item) => [String(item.id || ""), String(item.answer ?? "")]));
+  const rightQuestions = right.questions || [];
+  for (const item of rightQuestions) {
+    if ((leftAnswers.get(String(item.id || "")) ?? "") !== String(item.answer ?? "")) {
+      return true;
+    }
+  }
+  const answeredCount = (questions) => (questions || []).filter((item) => String(item.answer || "").trim() !== "").length;
+  return answeredCount(left.questions) !== answeredCount(rightQuestions);
+}
+
+function answeredEntries(questions) {
+  return (questions || [])
+    .filter((item) => String(item.answer || "").trim() !== "")
+    .map((item) => ({
+      id: String(item.id || ""),
+      fallback_id: String(item.fallback_id || ""),
+      label: String(item.label || String(item.fallback_id || "").replace(/#\d+$/u, "") || "Unmatched answer"),
+      breadcrumb: Array.isArray(item.breadcrumb) ? item.breadcrumb.map(String) : [],
+      answer: String(item.answer || ""),
+    }));
+}
+
+function dedupeEntries(entries) {
+  const seen = new Set();
+  const result = [];
+  for (const entry of entries) {
+    const key = [...entry.breadcrumb, entry.label, entry.answer].join("\u0000");
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    result.push(entry);
+  }
+  return result;
+}
+
+async function preserveRecovery(id, reason, questions, fingerprint) {
+  const existing = await loadRecovery(id).catch(() => null);
+  const entries = dedupeEntries([...(existing?.questions || []), ...answeredEntries(questions)]);
+  if (entries.length === 0) {
+    return null;
+  }
+  return saveRecovery(id, {
+    reason,
+    fingerprint: fingerprint ?? existing?.fingerprint ?? null,
+    questions: entries,
+  });
+}
+
+function showPreservedNotice(count) {
+  elements.reconcileText.textContent = `${count} saved answer${count === 1 ? "" : "s"} no longer fit this questionnaire and ${count === 1 ? "was" : "were"} preserved for review.`;
+  elements.reconcileNotice.hidden = false;
+}
+
+async function refreshPreservedEntries(recovery) {
+  preservedEntries = dedupeEntries([...(recovery?.questions || []), ...preservedEntries]);
+  if (preservedEntries.length > 0) {
+    showPreservedNotice(preservedEntries.length);
+  }
+}
+
+function preservedMarkdown() {
+  let output = "# Preserved answers\n\n";
+  for (const entry of preservedEntries) {
+    const heading = [...entry.breadcrumb, entry.label].filter(Boolean).join(" › ") || "Unmatched answer";
+    output += `## ${heading}\n\n${entry.answer}\n\n`;
+  }
+  return output.trimEnd() + "\n";
+}
+
+function showOrphanDialog() {
+  elements.orphanList.replaceChildren();
+  for (const entry of preservedEntries) {
+    const item = document.createElement("div");
+    item.className = "orphan-entry";
+
+    const heading = document.createElement("strong");
+    heading.textContent = entry.label;
+    item.append(heading);
+
+    if (entry.breadcrumb.length > 0) {
+      const path = document.createElement("small");
+      path.textContent = entry.breadcrumb.join(" › ");
+      item.append(path);
+    }
+
+    const answer = document.createElement("p");
+    answer.textContent = entry.answer;
+    item.append(answer);
+
+    elements.orphanList.append(item);
+  }
+  elements.orphanDialog.showModal();
+}
+
+async function copyPreservedEntries() {
+  const content = preservedMarkdown();
+  try {
+    await navigator.clipboard.writeText(content);
+    showToast("✓ Preserved answers copied as Markdown.", "copy-success");
+  } catch {
+    window.prompt("Copy the preserved answers:", content);
+  }
+}
+
+async function discardPreservedEntries() {
+  await deleteRecovery(session.id);
+  preservedEntries = [];
+  elements.reconcileNotice.hidden = true;
+  showToast("Preserved copy discarded.");
 }
 
 function firstUnanswered(questions) {
@@ -457,10 +646,15 @@ function firstUnanswered(questions) {
 
 async function initialise() {
   try {
-    session = await importPortableSession();
-    if (!session) {
+    let storedAlready = false;
+    const imported = await importPortableSession();
+    if (imported) {
+      session = imported.session;
+      storedAlready = imported.storedAlready;
+    } else {
       const sessionID = new URL(window.location.href).searchParams.get("session");
       session = await loadSession(sessionID);
+      storedAlready = Boolean(session);
     }
     if (!session) {
       throw new Error("This questionnaire is not stored in this browser. Start a new one or open a portable resume link.");
@@ -482,12 +676,15 @@ async function initialise() {
     const freshSession = !Array.isArray(session.questions) || session.questions.length === 0;
     const priorFingerprint = session.template_fingerprint;
     const previousQuestionID = session.questions?.[session.current_question]?.id;
+    const savedQuestions = freshSession ? [] : structuredClone(session.questions);
     const result = await callCore("reconcile", {
       source: templateSource,
       extension: catalogEntry.extension,
-      saved_questions: freshSession ? [] : session.questions,
+      saved_questions: savedQuestions,
     });
 
+    const unmatched = (result.reconciliation?.orphaned || [])
+      .filter((item) => String(item.answer || "").trim() !== "");
     session.questions = result.questions;
     sections = result.sections;
     session.template_name = result.template_name || catalogEntry.name;
@@ -503,7 +700,33 @@ async function initialise() {
     currentIndex = Math.min(Math.max(0, Math.floor(Number(session.current_question) || 0)), session.questions.length - 1);
     session.current_question = currentIndex;
 
-    await saveSession(session, { touch: priorFingerprint !== result.fingerprint });
+    if (unmatched.length > 0) {
+      const recovery = await preserveRecovery(session.id, "reconcile", savedQuestions, priorFingerprint);
+      preservedEntries = recovery?.questions || [];
+      showPreservedNotice(preservedEntries.length);
+    } else {
+      const recovery = await loadRecovery(session.id).catch(() => null);
+      preservedEntries = recovery?.questions || [];
+      if (preservedEntries.length > 0) {
+        showPreservedNotice(preservedEntries.length);
+      }
+    }
+
+    // Persist the session only when its content actually changed, so reloading
+    // does not advance the save revision or rewrite acknowledged answers.
+    if (!storedAlready || freshSession || priorFingerprint !== result.fingerprint) {
+      try {
+        const saved = await saveSession(session, { touch: priorFingerprint !== result.fingerprint });
+        session.revision = saved.revision;
+        session.updated_at = saved.updated_at;
+      } catch (error) {
+        if (error instanceof StorageConflictError) {
+          setSaveStatus(CONFLICT_STATUS, "conflict");
+        } else {
+          throw error;
+        }
+      }
+    }
     if (resumePayloadFromLocation()) {
       const cleanURL = new URL("./wizard.html", window.location.href);
       cleanURL.searchParams.set("session", session.id);
@@ -542,6 +765,12 @@ elements.download.addEventListener("click", () => void download(false));
 elements.finish.addEventListener("click", () => void download(true));
 elements.copyLink.addEventListener("click", () => void copyResumeLink());
 elements.finishCopyLink?.addEventListener("click", () => void copyResumeLink({ prominent: true }));
+elements.finishDelete?.addEventListener("click", () => void deleteLocalCopy());
+elements.reviewPreserved?.addEventListener("click", showOrphanDialog);
+elements.orphanCopy?.addEventListener("click", () => void copyPreservedEntries());
+elements.orphanDiscard?.addEventListener("click", () => void discardPreservedEntries().catch((error) => {
+  showToast(`Could not discard the preserved copy: ${error.message}`);
+}));
 elements.openHelp.addEventListener("click", () => elements.helpDialog.showModal());
 elements.openToc?.addEventListener("click", () => elements.toc.classList.add("open"));
 elements.closeToc?.addEventListener("click", () => elements.toc.classList.remove("open"));

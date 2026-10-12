@@ -54,7 +54,7 @@ function templateCard(template) {
   input.type = "text";
   input.maxLength = 100;
   input.autocomplete = "name";
-  input.placeholder = "e.g. Akito";
+  input.placeholder = "e.g. Alex";
   label.append(input);
   form.append(label);
 

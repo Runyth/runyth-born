@@ -47,6 +47,11 @@
         <div class="save-status" id="save-status" role="status" aria-live="polite">Loading…</div>
       </div>
 
+      <div class="notice notice-warn" id="reconcile-notice" hidden role="status">
+        <span id="reconcile-text"></span>
+        <button class="button button-quiet" id="review-preserved" type="button">Review preserved answers</button>
+      </div>
+
       <article class="question-card" id="question-card" hidden>
         <div class="question-position">
           <span id="question-number">Question</span>
@@ -121,10 +126,32 @@
         </section>
       </div>
       <div class="finish-dialog-actions">
+        <button class="button button-secondary" id="finish-delete" type="button">Delete local copy</button>
         <button class="button button-primary" value="close">Done</button>
       </div>
     </form>
     <div class="toast" id="finish-toast" hidden role="status" aria-live="polite"></div>
+  </dialog>
+
+  <dialog id="orphan-dialog" class="help-dialog" aria-labelledby="orphan-dialog-title">
+    <form method="dialog">
+      <div class="dialog-header">
+        <div>
+          <p class="dialog-kicker">Preserved answers</p>
+          <h2 id="orphan-dialog-title">Unmatched answers</h2>
+        </div>
+        <button class="icon-button" value="close" aria-label="Close preserved answers">×</button>
+      </div>
+      <div class="dialog-body">
+        <p class="orphan-intro">These answers no longer fit the current questionnaire. Copy them before discarding the preserved copy.</p>
+        <div id="orphan-list" class="orphan-list"></div>
+      </div>
+      <div class="finish-dialog-actions">
+        <button class="button button-secondary" id="orphan-copy" type="button">Copy all as Markdown</button>
+        <button class="button button-secondary" id="orphan-discard" type="button">Discard preserved copy</button>
+        <button class="button button-primary" value="close">Done</button>
+      </div>
+    </form>
   </dialog>
 
   <dialog id="help-dialog" class="help-dialog">
@@ -140,6 +167,7 @@
           <div><dt>Resume here</dt><dd>The normal wizard URL resumes from this browser's local storage.</dd></div>
           <div><dt>Resume elsewhere</dt><dd>Use “Copy resume link” to create a self-contained snapshot URL for another browser or device.</dd></div>
           <div><dt>Finish</dt><dd>The final button saves locally, marks the questionnaire complete, and downloads the Markdown file.</dd></div>
+          <div><dt>Delete</dt><dd>Use “Delete local copy” in the finish dialog to remove this questionnaire from this browser.</dd></div>
         </dl>
       </div>
     </form>

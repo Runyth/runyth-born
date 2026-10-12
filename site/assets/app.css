@@ -332,6 +332,18 @@ textarea:focus {
   color: #ffd4d4;
 }
 
+.notice-warn {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  border: 1px solid rgb(255 214 128 / 0.5);
+  background: rgb(255 214 128 / 0.08);
+  color: var(--warning);
+  border-radius: 14px;
+  margin: 0 0 1rem;
+}
+
 .empty-state p,
 .privacy-note p {
   color: var(--muted);
@@ -534,6 +546,10 @@ progress::-moz-progress-bar {
 
 .save-status.error {
   color: var(--danger);
+}
+
+.save-status.conflict {
+  color: var(--warning);
 }
 
 .question-card,
@@ -845,8 +861,38 @@ progress::-moz-progress-bar {
 .finish-dialog-actions {
   display: flex;
   justify-content: flex-end;
+  gap: 0.6rem;
   border-top: 1px solid var(--border);
   padding: 1rem 1.25rem;
+}
+
+.orphan-list {
+  display: grid;
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.orphan-entry {
+  display: grid;
+  gap: 0.35rem;
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.orphan-entry small {
+  color: var(--muted);
+}
+
+.orphan-entry p {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.orphan-intro {
+  margin: 0;
+  color: var(--muted);
 }
 
 .shortcut-list {
