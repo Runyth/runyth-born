@@ -122,6 +122,47 @@ func TestPlainScalarWithApostropheKeepsCommentHandling(t *testing.T) {
 	}
 }
 
+func TestBlockScalarChompingAndBlankSemantics(t *testing.T) {
+	cases := []struct {
+		name   string
+		source string
+		want   string
+	}{
+		{"keep with terminating artifact", "value: |+\n  a\n", "a\n"},
+		{"keep with blank-only content", "value: |+\n\n", "\n"},
+		{"keep with real trailing blank", "value: |+\n  a\n\n", "a\n\n"},
+		{"folded blank before more-indented line", "value: >-\n  a\n\n    b\n", "a\n\n  b"},
+		{"folded two blanks before more-indented line", "value: >-\n  a\n\n\n    b\n", "a\n\n\n  b"},
+		{"folded keep with blank run", "value: >+\n  a\n    b\n  c\n\n  d\n", "a\n  b\nc\nd\n"},
+		{"explicit indentation with keep", "value: |2+\n    a\n", "  a\n"},
+		{"literal preserves blank runs", "value: |\n  a\n\n\n  b\n", "a\n\n\nb\n"},
+	}
+
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			parsed, err := Parse([]byte(testCase.source))
+			if err != nil {
+				t.Fatalf("Parse() error = %v", err)
+			}
+			mapping, ok := parsed.(map[string]any)
+			if !ok {
+				t.Fatalf("root type = %T, want map[string]any", parsed)
+			}
+			if mapping["value"] != testCase.want {
+				t.Fatalf("value = %q, want %q", mapping["value"], testCase.want)
+			}
+		})
+	}
+}
+
+func TestMalformedBlockScalarHeadersAreRejected(t *testing.T) {
+	for _, source := range []string{"value: |0\n", "value: |x\n  a\n", "value: |2x-3\n  a\n"} {
+		if _, err := Parse([]byte(source)); err == nil {
+			t.Fatalf("accepted a malformed block scalar header %q", source)
+		}
+	}
+}
+
 func TestQuotedScalarsKeepCommentCharactersInsideTheScalar(t *testing.T) {
 	for source, want := range map[string]string{
 		"value: \"a # b\"\n":      "a # b",

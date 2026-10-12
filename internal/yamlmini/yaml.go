@@ -212,7 +212,7 @@ func (p *parser) assignMappingValue(target map[string]any, key string, rawValue 
 	rawValue = strings.TrimSpace(rawValue)
 
 	if looksLikeBlockScalarHeader(rawValue) {
-		value, err := p.parseBlockScalarHeaderAndValue(childIndent, parentIndent, rawValue)
+		value, err := p.parseBlockScalarHeaderAndValue(parentIndent, rawValue)
 		if err != nil {
 			return err
 		}
@@ -249,7 +249,7 @@ func (p *parser) assignMappingValue(target map[string]any, key string, rawValue 
 	return nil
 }
 
-func (p *parser) parseBlockScalarHeaderAndValue(childIndent int, parentIndent int, rawValue string) (string, error) {
+func (p *parser) parseBlockScalarHeaderAndValue(parentIndent int, rawValue string) (string, error) {
 	header, rest := splitHeaderToken(rawValue)
 	if rest != "" && !strings.HasPrefix(rest, "#") {
 		return "", p.errorAt(max(0, p.index-1), fmt.Sprintf("unsupported block scalar header %q", rawValue))
@@ -258,7 +258,7 @@ func (p *parser) parseBlockScalarHeaderAndValue(childIndent int, parentIndent in
 	if err != nil {
 		return "", p.errorAt(max(0, p.index-1), err.Error())
 	}
-	return p.parseBlockScalar(childIndent, parentIndent, header[0], chomp, explicitIndent)
+	return p.parseBlockScalar(parentIndent, header[0], chomp, explicitIndent)
 }
 
 // splitHeaderToken splits the leading [|>] header token from a trailing
@@ -307,34 +307,33 @@ func parseHeaderIndicators(header string) (byte, int, error) {
 }
 
 func looksLikeBlockScalarHeader(value string) bool {
+	// A plain scalar cannot start with a block scalar indicator, so any value
+	// beginning with | or > is a header to validate — or an error to report —
+	// never silently-accepted literal text (F08).
 	trimmed := strings.TrimSpace(value)
-	if trimmed == "" || (trimmed[0] != '|' && trimmed[0] != '>') {
-		return false
-	}
-	token, rest := splitHeaderToken(trimmed)
-	if rest != "" && !strings.HasPrefix(rest, "#") {
-		// A plain scalar cannot start with a block scalar indicator; treat the
-		// value as an invalid header so the caller rejects it explicitly.
-		return true
-	}
-	_, _, err := parseHeaderIndicators(token)
-	return err == nil
+	return trimmed != "" && (trimmed[0] == '|' || trimmed[0] == '>')
 }
 
-func (p *parser) parseBlockScalar(childIndent int, parentIndent int, style byte, chomp byte, explicitIndent int) (string, error) {
-	bound := childIndent
-	baseIndent := 0
+func (p *parser) parseBlockScalar(parentIndent int, style byte, chomp byte, explicitIndent int) (string, error) {
+	// Content must be more indented than the parent node; an explicit
+	// indentation indicator moves the requirement exactly that far.
+	bound := parentIndent + 1
 	if explicitIndent > 0 {
-		baseIndent = parentIndent + explicitIndent
-		bound = baseIndent
+		bound = parentIndent + explicitIndent
 	}
 
 	start := p.index
-	minimumIndent := -1
+	baseIndent := 0
+	sawContentLine := false
 	end := start
 	for end < len(p.lines) {
 		raw := p.lines[end]
 		if strings.TrimSpace(raw) == "" {
+			if end == len(p.lines)-1 {
+				// The final empty element is the document's terminating
+				// newline, not a blank content line (F08).
+				break
+			}
 			end++
 			continue
 		}
@@ -345,18 +344,18 @@ func (p *parser) parseBlockScalar(childIndent int, parentIndent int, style byte,
 		if lineIndent < bound {
 			break
 		}
-		if explicitIndent == 0 && (minimumIndent == -1 || lineIndent < minimumIndent) {
-			minimumIndent = lineIndent
+		if !sawContentLine {
+			baseIndent = lineIndent
+			sawContentLine = true
+		} else if lineIndent < baseIndent {
+			// A content line shallower than the first content line ends the
+			// block; the surrounding mapping then reports the misplaced line.
+			break
 		}
 		end++
 	}
-
-	if explicitIndent == 0 {
-		if minimumIndent == -1 {
-			p.index = end
-			return "", nil
-		}
-		baseIndent = minimumIndent
+	if explicitIndent > 0 {
+		baseIndent = bound
 	}
 
 	contentLines := make([]string, 0, end-start)
@@ -373,20 +372,43 @@ func (p *parser) parseBlockScalar(childIndent int, parentIndent int, style byte,
 	}
 	p.index = end
 
+	sawContent := false
+	for _, line := range contentLines {
+		if line != "" {
+			sawContent = true
+			break
+		}
+	}
+
+	// Literal content keeps every line including its own terminating newline,
+	// so keep-chomping preserves real trailing blank lines without adding any
+	// that no longer exist (F08).
 	var value string
 	if style == '>' {
 		value = foldLines(contentLines)
+		if sawContent {
+			value += "\n"
+		}
 	} else {
-		value = strings.Join(contentLines, "\n")
+		var builder strings.Builder
+		for _, line := range contentLines {
+			builder.WriteString(line)
+			builder.WriteByte('\n')
+		}
+		value = builder.String()
 	}
 
 	switch chomp {
 	case '-':
 		value = strings.TrimRight(value, "\n")
 	case '+':
-		value += "\n"
+		// Keep the trailing breaks exactly as the source wrote them.
 	default:
-		value = strings.TrimRight(value, "\n") + "\n"
+		if sawContent {
+			value = strings.TrimRight(value, "\n") + "\n"
+		} else {
+			value = ""
+		}
 	}
 
 	return value, nil
@@ -410,7 +432,14 @@ func foldLines(lines []string) string {
 		if !first {
 			switch {
 			case pendingBlanks > 0:
-				builder.WriteString(strings.Repeat("\n", pendingBlanks))
+				if previousMoreIndented || moreIndented {
+					// Breaks around a more-indented line are never folded, so
+					// each blank line keeps its own break plus the break that
+					// ends the run's previous line (F08).
+					builder.WriteString(strings.Repeat("\n", pendingBlanks+1))
+				} else {
+					builder.WriteString(strings.Repeat("\n", pendingBlanks))
+				}
 			case previousMoreIndented || moreIndented:
 				builder.WriteByte('\n')
 			default:
