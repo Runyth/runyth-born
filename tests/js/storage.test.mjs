@@ -64,7 +64,9 @@ async function storageMock() {
 // Automatic mock: behaves like real IndexedDB (requests fire, then the
 // transaction commits), so tests can simply await the storage API. Each named
 // database keeps its own stores, which lets tests seed the legacy namespace.
-async function autoStorageMock({ storedSessions = [], failTransactions = false, abortAfterPut = false, legacySessions = [], legacyFallbackSessions = [] } = {}) {
+// `noIndexedDB: true` removes IndexedDB entirely, matching privacy settings
+// where only the localStorage fallback works.
+async function autoStorageMock({ storedSessions = [], failTransactions = false, abortAfterPut = false, legacySessions = [], legacyFallbackSessions = [], noIndexedDB = false } = {}) {
   const fallback = new Map();
   globalThis.localStorage = {
     setItem: (key, value) => fallback.set(key, String(value)),
@@ -88,7 +90,10 @@ async function autoStorageMock({ storedSessions = [], failTransactions = false, 
   for (const legacy of legacyFallbackSessions) {
     fallback.set(legacySessionKey + legacy.id, JSON.stringify(legacy));
   }
-  globalThis.indexedDB = {
+  if (noIndexedDB) {
+    globalThis.indexedDB = undefined;
+  } else {
+    globalThis.indexedDB = {
     databases: async () => [...databases.keys()].map((name) => ({ name })),
     open(name) {
       const open = {};
@@ -139,9 +144,10 @@ async function autoStorageMock({ storedSessions = [], failTransactions = false, 
       });
       return open;
     },
-  };
+    };
+  }
   const module = await import(`../../site/assets/storage.js?case=${Math.random()}`);
-  return { module, fallback, stores };
+  return { module, fallback, stores, legacyStores: storesFor("template-wizard-web") };
 }
 
 test("IndexedDB save waits for transaction commit", async () => {
@@ -213,9 +219,9 @@ test("loading prefers the higher revision regardless of wall-clock timestamps", 
   assert.equal(loaded.answer, "Fallback copy");
 });
 
-test("equal revisions prefer the IndexedDB record", async () => {
-  const mock = await autoStorageMock({ storedSessions: [{ id: "test", revision: 2, answer: "IndexedDB copy", updated_at: "2026-01-01T00:00:00.000Z" }] });
-  mock.fallback.set(sessionKey + "test", JSON.stringify({ id: "test", revision: 2, answer: "Fallback copy", updated_at: "2999-01-01T00:00:00.000Z" }));
+test("a tied update resolves by display timestamp and prefers the primary on indistinguishable ties", async () => {
+  const mock = await autoStorageMock({ storedSessions: [{ id: "test", revision: 2, answer: "IndexedDB copy", updated_at: "2999-01-01T00:00:00.000Z" }] });
+  mock.fallback.set(sessionKey + "test", JSON.stringify({ id: "test", revision: 2, answer: "Fallback copy", updated_at: "2020-01-01T00:00:00.000Z" }));
   const loaded = await mock.module.loadSession("test");
   assert.equal(loaded.answer, "IndexedDB copy");
 });
@@ -238,10 +244,70 @@ test("a failing IndexedDB position save falls back to localStorage", async () =>
 
 test("preserved answer copies are stored and recoverable", async () => {
   const mock = await autoStorageMock();
-  await mock.module.saveRecovery("test", { reason: "reconcile", questions: [{ label: "Name", answer: "Akito" }] });
+  await mock.module.saveRecovery("test", { reason: "reconcile", entries: [{ label: "Name", answer: "Akito" }] });
   const loaded = await mock.module.loadRecovery("test");
   assert.equal(loaded.reason, "reconcile");
-  assert.deepEqual(loaded.questions, [{ label: "Name", answer: "Akito" }]);
+  assert.deepEqual(loaded.entries, [{ label: "Name", answer: "Akito" }]);
+});
+
+test("a fallback recovery record stays reviewable after the primary store recovers", async () => {
+  const mock = await autoStorageMock();
+  mock.fallback.set(sessionKey + "test.recovery", JSON.stringify({
+    id: "test", reason: "conflict", saved_at: "2026-01-02T00:00:00.000Z", entries: [{ label: "Name", answer: "Preserved fallback answer" }],
+  }));
+  const loaded = await mock.module.loadRecovery("test");
+  assert.equal(loaded.reason, "conflict");
+  assert.equal(loaded.entries[0].answer, "Preserved fallback answer");
+});
+
+test("a newer fallback recovery record wins over an older primary record", async () => {
+  const mock = await autoStorageMock();
+  mock.stores.set("recoveries", new Map([["test", {
+    id: "test", reason: "reconcile", saved_at: "2026-01-01T00:00:00.000Z", entries: [{ label: "Name", answer: "older" }],
+  }]]));
+  mock.fallback.set(sessionKey + "test.recovery", JSON.stringify({
+    id: "test", reason: "import", saved_at: "2026-01-02T00:00:00.000Z", entries: [{ label: "Name", answer: "newer" }],
+  }));
+  const loaded = await mock.module.loadRecovery("test");
+  assert.equal(loaded.reason, "import");
+  assert.equal(loaded.entries[0].answer, "newer");
+});
+
+test("a stale primary write is rejected while a newer acknowledged fallback save exists", async () => {
+  const mock = await autoStorageMock({ storedSessions: [{ id: "test", revision: 3, answer: "IndexedDB copy", updated_at: "2026-01-01T00:00:00.000Z" }] });
+  mock.fallback.set(sessionKey + "test", JSON.stringify({ id: "test", revision: 4, answer: "Fallback copy", updated_at: "2026-01-02T00:00:00.000Z" }));
+  await assert.rejects(
+    () => mock.module.saveSession({ id: "test", revision: 3, answer: "stale", questions: [] }),
+    (error) => error.name === "StorageConflictError",
+  );
+  assert.equal(mock.stores.get("sessions").get("test").answer, "IndexedDB copy");
+  assert.equal(JSON.parse(mock.fallback.get(sessionKey + "test")).answer, "Fallback copy");
+});
+
+test("a stale fallback write is rejected while a newer acknowledged IndexedDB save exists", async () => {
+  const mock = await autoStorageMock({ storedSessions: [{ id: "test", revision: 5, answer: "newest" }] });
+  mock.fallback.set(sessionKey + "test", JSON.stringify({ id: "test", revision: 2, answer: "older fallback" }));
+  await assert.rejects(
+    () => mock.module.saveSession({ id: "test", revision: 2, answer: "stale", questions: [] }),
+    (error) => error.name === "StorageConflictError",
+  );
+  assert.equal(JSON.parse(mock.fallback.get(sessionKey + "test")).answer, "older fallback");
+  assert.equal(mock.stores.get("sessions").get("test").answer, "newest");
+});
+
+test("a tied divergent pair loads the primary copy and preserves the other for review", async () => {
+  const mock = await autoStorageMock({
+    storedSessions: [{ id: "test", revision: 4, answer: "IndexedDB copy", updated_at: "2026-01-02T00:00:00.000Z", questions: [{ id: "q1", label: "Name", answer: "IndexedDB copy" }] }],
+  });
+  mock.fallback.set(sessionKey + "test", JSON.stringify({
+    id: "test", revision: 4, answer: "Fallback copy", updated_at: "2026-01-03T00:00:00.000Z",
+    questions: [{ id: "q1", label: "Name", answer: "Fallback copy" }],
+  }));
+  const loaded = await mock.module.loadSession("test");
+  assert.equal(loaded.answer, "Fallback copy");
+  const recovery = await mock.module.loadRecovery("test");
+  assert.ok(recovery, "the divergent primary copy must be preserved for review");
+  assert.ok(recovery.entries.some((entry) => entry.answer === "IndexedDB copy"));
 });
 
 test("an aborted transaction write does not keep its record", async () => {
@@ -295,6 +361,49 @@ test("opening a store migrates seeded legacy sessions into the new namespace", a
   const loaded = await mock.module.loadSession("legacy-idb");
   assert.equal(loaded.answer, "one");
 });
+
+test("legacy fallback sessions migrate without IndexedDB", async () => {
+  const mock = await autoStorageMock({
+    noIndexedDB: true,
+    legacyFallbackSessions: [{ id: "legacy-fallback", answer: "Fallback-only migrated answer", template_name: "Legacy", questions: [] }],
+  });
+  await mock.module.listRecentSessions(20);
+  assert.equal(JSON.parse(mock.fallback.get(sessionKey + "legacy-fallback")).answer, "Fallback-only migrated answer");
+  const loaded = await mock.module.loadSession("legacy-fallback");
+  assert.equal(loaded.answer, "Fallback-only migrated answer");
+  assert.equal(mock.fallback.has(legacySessionKey + "legacy-fallback"), true, "the legacy original stays recoverable");
+});
+
+test("migration selects the fresher legacy copy when both legacy stores hold one id", async () => {
+  const mock = await autoStorageMock({
+    legacySessions: [{ id: "shared", answer: "Old legacy IndexedDB answer", template_name: "Legacy", updated_at: "2026-01-01T00:00:00.000Z", questions: [] }],
+    legacyFallbackSessions: [{ id: "shared", answer: "Newest legacy fallback answer", template_name: "Legacy", updated_at: "2026-01-02T00:00:00.000Z", questions: [] }],
+  });
+  await mock.module.listRecentSessions(20);
+  assert.equal(mock.stores.get("sessions").get("shared").answer, "Newest legacy fallback answer");
+});
+
+test("fallback-only deletion succeeds without IndexedDB", async () => {
+  const mock = await autoStorageMock({
+    noIndexedDB: true,
+    legacyFallbackSessions: [{ id: "legacy-fallback", answer: "one", template_name: "Legacy", questions: [] }],
+  });
+  mock.fallback.set(sessionKey + "legacy-fallback", JSON.stringify({ id: "legacy-fallback" }));
+  await mock.module.deleteSession("legacy-fallback");
+  assert.equal(mock.fallback.has(sessionKey + "legacy-fallback"), false);
+  assert.equal(mock.fallback.has(legacySessionKey + "legacy-fallback"), false);
+});
+
+test("deleting a migrated session also removes the legacy IndexedDB copy", async () => {
+  const mock = await autoStorageMock({
+    storedSessions: [{ id: "test", revision: 1, answer: "migrated", questions: [] }],
+    legacySessions: [{ id: "test", answer: "Saved before project rename", template_name: "Legacy", questions: [] }],
+  });
+  await mock.module.deleteSession("test");
+  assert.equal(mock.stores.get("sessions").has("test"), false);
+  assert.equal(mock.legacyStores.get("sessions").has("test"), false, "the deleted questionnaire must not return through migration");
+});
+
 
 test("migration leaves existing new-namespace records untouched", async () => {
   const mock = await autoStorageMock({

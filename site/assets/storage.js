@@ -67,39 +67,52 @@ function migrateOnce() {
 }
 
 async function migrateLegacyRecords() {
-  if (!globalThis.indexedDB) {
-    return;
+  // The legacy fallback keys are migrated even when IndexedDB is unavailable:
+  // that is exactly the compatibility situation where the fallback store is
+  // the only usable copy (F06).
+  const legacySessions = [];
+  if (globalThis.indexedDB) {
+    try {
+      legacySessions.push(...await readLegacySessions());
+    } catch { /* Legacy IndexedDB is unreadable; the fallback path still applies. */ }
   }
-  const legacySessions = await readLegacySessions();
   const legacyFallbackSessions = readLegacyFallbackSessions();
   if (legacySessions.length === 0 && legacyFallbackSessions.length === 0) {
     return;
   }
 
-  const database = await openRawDatabase();
-  try {
-    let indexedSessions = [];
+  let database = null;
+  let indexedSessions = [];
+  if (globalThis.indexedDB) {
     try {
+      database = await openRawDatabase();
       indexedSessions = await transactionOn(database, STORE_NAME, "readonly", getAllOperate());
-    } catch { /* The new stores may be unavailable; the fallback check still applies. */ }
-    let fallbackSessions = [];
-    try {
-      fallbackSessions = fallbackList();
-    } catch { /* Fallback storage is unavailable. */ }
+    } catch {
+      database = null;
+      indexedSessions = [];
+    }
+  }
+  let fallbackSessions = [];
+  try {
+    fallbackSessions = fallbackList();
+  } catch { /* Fallback storage is unavailable. */ }
 
-    const records = mergeLegacyRecords({ legacySessions, legacyFallbackSessions, indexedSessions, fallbackSessions });
-    for (const record of records) {
+  const records = mergeLegacyRecords({ legacySessions, legacyFallbackSessions, indexedSessions, fallbackSessions });
+  for (const record of records) {
+    let stored = false;
+    if (database) {
       try {
         await transactionOn(database, STORE_NAME, "readwrite", putOperate(record));
-      } catch {
-        try {
-          fallbackSave(record);
-        } catch { /* Neither store could accept the migrated record. */ }
-      }
+        stored = true;
+      } catch { /* Fall through to the fallback store. */ }
     }
-  } finally {
-    database.close();
+    if (!stored) {
+      try {
+        fallbackSave(record);
+      } catch { /* Neither store could accept the migrated record. */ }
+    }
   }
+  database?.close();
 }
 
 function readLegacySessions() {
@@ -160,27 +173,27 @@ function readLegacyFallbackSessions() {
 }
 
 // Pure helper: returns the legacy records the new namespace is missing, with a
-// starting revision so migrated sessions participate in save ordering.
+// starting revision so migrated sessions participate in save ordering. When
+// both legacy stores hold one questionnaire, the fresher wall-clock copy is
+// migrated — the compatibility rule the legacy application used — and the
+// unselected original remains recoverable in its legacy store (F06).
 export function mergeLegacyRecords({ legacySessions = [], legacyFallbackSessions = [], indexedSessions = [], fallbackSessions = [] } = {}) {
   const known = new Set([...indexedSessions, ...fallbackSessions]
     .map((entry) => entry?.id)
     .filter(Boolean));
-  const queued = new Set();
-  const records = [];
+  const byID = new Map();
   for (const legacy of [...legacySessions, ...legacyFallbackSessions]) {
-    if (!legacy?.id || known.has(legacy.id) || queued.has(legacy.id)) {
+    if (!legacy?.id || known.has(legacy.id)) {
       continue;
     }
-    queued.add(legacy.id);
-    records.push({ ...structuredClone(legacy), revision: normalizeRevision(legacy.revision) || 1 });
+    const existing = byID.get(legacy.id);
+    if (!existing || String(legacy.updated_at || "").localeCompare(String(existing.updated_at || "")) > 0) {
+      byID.set(legacy.id, legacy);
+    }
   }
-  return records;
+  return [...byID.values()].map((legacy) => ({ ...structuredClone(legacy), revision: normalizeRevision(legacy.revision) || 1 }));
 }
 
-// Runs one transaction and resolves with the value that `operate` records in
-// `state.result` (immediately for plain writes, or from request callbacks for
-// read-modify-write work). Commit failures and aborts reject; a manual abort
-// from `operate` rejects with the recorded conflict instead of a storage error.
 // Runs one transaction and resolves with the value that `operate` records in
 // `state.result` (immediately for plain writes, or from request callbacks for
 // read-modify-write work). Commit failures and aborts reject; a manual abort
@@ -253,7 +266,30 @@ export function normalizeRevision(value) {
 function pickNewer(left, right) {
   if (!left) { return right; }
   if (!right) { return left; }
-  return normalizeRevision(right.revision) > normalizeRevision(left.revision) ? right : left;
+  const leftRevision = normalizeRevision(left.revision);
+  const rightRevision = normalizeRevision(right.revision);
+  if (leftRevision !== rightRevision) {
+    return rightRevision > leftRevision ? right : left;
+  }
+  // Equal revisions: the legacy application ordered copies by wall-clock
+  // timestamp; keep that compatibility rule and prefer the primary store on
+  // indistinguishable ties.
+  const fallbackNewer = String(right.updated_at || "").localeCompare(String(left.updated_at || "")) > 0;
+  return fallbackNewer ? right : left;
+}
+
+// Answers decide divergence between two copies of one session; timestamps and
+// positions never do (F01/F03).
+function recordsDiverge(left, right) {
+  if (!left || !right) { return false; }
+  if (String(left.player_name || "") !== String(right.player_name || "")) { return true; }
+  if (Boolean(left.completed) !== Boolean(right.completed)) { return true; }
+  const leftAnswers = new Map((left.questions || []).map((question) => [String(question.id || ""), String(question.answer ?? "")]));
+  for (const question of right.questions || []) {
+    if ((leftAnswers.get(String(question.id || "")) ?? "") !== String(question.answer ?? "")) { return true; }
+  }
+  const answeredCount = (questions) => (questions || []).filter((item) => String(item.answer || "").trim() !== "").length;
+  return answeredCount(left.questions) !== answeredCount(right.questions);
 }
 
 export function createSession(template, playerName = "") {
@@ -276,10 +312,11 @@ export function createSession(template, playerName = "") {
 }
 
 // Saves are acknowledged only after a transaction commit, and every saved copy
-// carries a monotonic revision. A stored record with a higher revision than the
-// incoming copy means another tab or device acknowledged a newer save; the
-// incoming copy must never silently replace it. Wall-clock timestamps are
-// display metadata only and never decide which copy is authoritative (F03).
+// carries a monotonic revision. Authority is established across BOTH storage
+// copies before accepting a write (F01): a stale tab must not write over a
+// newer acknowledged save that lives in the other store, and a recovered
+// primary store must not overwrite newer fallback state. Wall-clock timestamps
+// are display metadata only and never decide answer authority (F03).
 export async function saveSession(session, { touch = true } = {}) {
   if (!session?.id) {
     throw new Error("Cannot save a session without an identifier");
@@ -291,8 +328,15 @@ export async function saveSession(session, { touch = true } = {}) {
     session.updated_at = copy.updated_at;
   }
 
+  const fallbackRecord = readFallbackRecord(copy.id);
+  const fallbackRevision = normalizeRevision(fallbackRecord?.revision);
+  if (fallbackRevision > copy.revision
+    || (fallbackRevision === copy.revision && fallbackRecord && recordsDiverge(fallbackRecord, copy))) {
+    throw new StorageConflictError();
+  }
+
   try {
-    const saved = await saveSessionRecord(copy);
+    const saved = await saveSessionRecord(copy, fallbackRevision);
     session.revision = saved.revision;
     return saved;
   } catch (error) {
@@ -313,8 +357,10 @@ export async function saveSession(session, { touch = true } = {}) {
 }
 
 // Reads and updates the stored record inside one transaction so a concurrent
-// save cannot slip between the comparison and the write (F01).
-function saveSessionRecord(copy) {
+// save cannot slip between the comparison and the write (F01). The fallback
+// copy's revision participates in the bump so the primary never ties or lands
+// below a newer acknowledged fallback save.
+function saveSessionRecord(copy, fallbackRevision) {
   return runTransaction(STORE_NAME, "readwrite", (store, transaction, state) => {
     const request = store.get(copy.id);
     request.onsuccess = () => {
@@ -324,7 +370,7 @@ function saveSessionRecord(copy) {
         try { transaction.abort(); } catch { /* aborting after another failure is harmless */ }
         return;
       }
-      copy.revision = Math.max(storedRevision, copy.revision) + 1;
+      copy.revision = Math.max(storedRevision, fallbackRevision, copy.revision) + 1;
       state.result = copy;
       store.put(copy);
     };
@@ -333,10 +379,13 @@ function saveSessionRecord(copy) {
 }
 
 function fallbackSaveRecord(copy) {
-  const storedRevision = normalizeRevision(fallbackLoad(copy.id)?.revision);
+  const storedRevision = normalizeRevision(readFallbackRecord(copy.id)?.revision);
   if (storedRevision > copy.revision) {
     throw new StorageConflictError();
   }
+  // The incoming revision already chains this tab's acknowledged history, and
+  // the up-front cross-store check rejected anything newer elsewhere (F01), so
+  // the fallback copy's own revision is the remaining floor here.
   copy.revision = Math.max(storedRevision, copy.revision) + 1;
   fallbackSave(copy);
   return copy;
@@ -363,6 +412,16 @@ export async function loadSession(id) {
   const selected = pickNewer(indexedSession, fallbackSession);
   if (!selected) {
     return null;
+  }
+
+  // Equal-revision divergent copies across the two stores are handled
+  // explicitly: the selected record loads, and the other copy is preserved for
+  // review instead of being silently buried (F01).
+  if (indexedSession && fallbackSession
+    && normalizeRevision(indexedSession.revision) === normalizeRevision(fallbackSession.revision)
+    && recordsDiverge(indexedSession, fallbackSession)) {
+    void stashDivergentCopy(id, selected === indexedSession ? fallbackSession : indexedSession)
+      .catch(() => undefined);
   }
 
   // The most recently navigated position is persisted separately from the
@@ -436,16 +495,26 @@ export async function saveRecovery(id, recovery) {
 }
 
 export async function loadRecovery(id) {
+  // Both copies are consulted even when the primary read succeeds, so a
+  // preserved record acknowledged through the fallback stays reviewable after
+  // the primary store recovers (F02).
+  let indexedRecord = null;
   try {
-    return await getRecord(RECOVERY_STORE_NAME, id);
+    indexedRecord = await getRecord(RECOVERY_STORE_NAME, id);
   } catch {
-    try {
-      const raw = localStorage.getItem(`${FALLBACK_PREFIX}${id}.recovery`);
-      return raw ? JSON.parse(raw) : null;
-    } catch {
-      return null;
-    }
+    indexedRecord = null;
   }
+  let fallbackRecord = null;
+  try {
+    const raw = localStorage.getItem(`${FALLBACK_PREFIX}${id}.recovery`);
+    fallbackRecord = raw ? JSON.parse(raw) : null;
+  } catch {
+    fallbackRecord = null;
+  }
+  if (!indexedRecord) { return fallbackRecord; }
+  if (!fallbackRecord) { return indexedRecord; }
+  return String(fallbackRecord.saved_at || "").localeCompare(String(indexedRecord.saved_at || "")) > 0
+    ? fallbackRecord : indexedRecord;
 }
 
 export async function deleteRecovery(id) {
@@ -462,34 +531,81 @@ export async function deleteRecovery(id) {
 }
 
 // Removes every stored copy of a questionnaire: the session, its navigation
-// position, and any preserved recovery record (including fallback mirrors).
+// position, any preserved recovery record (including fallback mirrors), and
+// the copies left by the legacy migration, so a deleted questionnaire cannot
+// return on the next open (F11). Cleanup is reported as incomplete only when
+// an IndexedDB copy may survive; a missing IndexedDB with a successful
+// fallback cleanup is a complete deletion.
 export async function deleteSession(id) {
   if (!id) {
     throw new Error("A session identifier is required");
   }
-  const fallbackKeys = ["", ".position", ".recovery"];
+  let removedIndexedDB = true;
+  if (globalThis.indexedDB) {
+    try {
+      await runTransaction([STORE_NAME, POSITION_STORE_NAME, RECOVERY_STORE_NAME], "readwrite", (stores, transaction, state) => {
+        const [sessions, positions, recoveries] = stores;
+        sessions.delete(id);
+        positions.delete(id);
+        recoveries.delete(id);
+        state.result = null;
+        return state.result;
+      });
+    } catch {
+      removedIndexedDB = false;
+    }
+    try {
+      await deleteLegacySessionRecord(id);
+    } catch {
+      removedIndexedDB = false;
+    }
+  }
   try {
-    await runTransaction([STORE_NAME, POSITION_STORE_NAME, RECOVERY_STORE_NAME], "readwrite", (stores, transaction, state) => {
-      const [sessions, positions, recoveries] = stores;
-      sessions.delete(id);
-      positions.delete(id);
-      recoveries.delete(id);
-      state.result = null;
-      return state.result;
-    });
-  } catch {
-    try {
-      for (const suffix of fallbackKeys) {
-        localStorage.removeItem(`${FALLBACK_PREFIX}${id}${suffix}`);
+    for (const prefix of [FALLBACK_PREFIX, LEGACY_FALLBACK_PREFIX]) {
+      for (const suffix of ["", ".position", ".recovery"]) {
+        localStorage.removeItem(`${prefix}${id}${suffix}`);
       }
-    } catch { /* Fallback storage is unavailable. */ }
-    throw new Error("Could not delete the stored questionnaire");
+    }
+  } catch { /* Fallback storage is unavailable, so it held no removable copies. */ }
+  if (!removedIndexedDB) {
+    throw new Error("Could not delete every stored copy of this questionnaire");
   }
-  for (const suffix of fallbackKeys) {
-    try {
-      localStorage.removeItem(`${FALLBACK_PREFIX}${id}${suffix}`);
-    } catch { /* Fallback storage is unavailable. */ }
+}
+
+async function deleteLegacySessionRecord(id) {
+  const legacyDatabases = typeof indexedDB.databases === "function"
+    ? await indexedDB.databases().catch(() => null)
+    : null;
+  if (legacyDatabases && !legacyDatabases.some((entry) => entry?.name === LEGACY_DATABASE_NAME)) {
+    return;
   }
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(LEGACY_DATABASE_NAME);
+    request.onsuccess = () => {
+      const database = request.result;
+      if (!database.objectStoreNames.contains(STORE_NAME)) {
+        database.close();
+        resolve();
+        return;
+      }
+      const transaction = database.transaction(STORE_NAME, "readwrite");
+      transaction.objectStore(STORE_NAME).delete(id);
+      transaction.oncomplete = () => {
+        database.close();
+        resolve();
+      };
+      transaction.onabort = () => {
+        database.close();
+        reject(transaction.error || new Error("Could not delete the legacy questionnaire record"));
+      };
+      transaction.onerror = () => {
+        database.close();
+        reject(transaction.error || new Error("Could not delete the legacy questionnaire record"));
+      };
+    };
+    request.onerror = () => resolve();
+    request.onblocked = () => reject(new Error("The legacy questionnaire record is blocked by another tab"));
+  });
 }
 
 export async function listRecentSessions(limit = 8) {
@@ -529,6 +645,55 @@ function fallbackSave(session) {
 function fallbackLoad(id) {
   const raw = localStorage.getItem(`${FALLBACK_PREFIX}${id}`);
   return raw ? JSON.parse(raw) : null;
+}
+
+function readFallbackRecord(id) {
+  try {
+    return fallbackLoad(id);
+  } catch {
+    return null;
+  }
+}
+
+// Preserved-answer entries are the shared shape between the storage layer and
+// the wizard review dialog: one record per at-risk answered question.
+export function answeredEntries(questions) {
+  return (questions || [])
+    .filter((item) => String(item.answer || "").trim() !== "")
+    .map((item) => ({
+      id: String(item.id || ""),
+      fallback_id: String(item.fallback_id || ""),
+      label: String(item.label || String(item.fallback_id || "").replace(/#\d+$/u, "") || "Unmatched answer"),
+      breadcrumb: Array.isArray(item.breadcrumb) ? item.breadcrumb.map(String) : [],
+      answer: String(item.answer || ""),
+    }));
+}
+
+export function dedupeEntries(entries) {
+  const seen = new Set();
+  const result = [];
+  for (const entry of entries) {
+    const key = [...entry.breadcrumb, entry.label, entry.answer].join("\u0000");
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    result.push(entry);
+  }
+  return result;
+}
+
+async function stashDivergentCopy(id, record) {
+  const existing = await loadRecovery(id).catch(() => null);
+  const entries = dedupeEntries([...(existing?.entries || []), ...answeredEntries([record])]);
+  if (entries.length === 0) {
+    return null;
+  }
+  return saveRecovery(id, {
+    reason: existing?.reason || "divergent",
+    fingerprint: existing?.fingerprint ?? null,
+    entries,
+  });
 }
 
 function fallbackList() {
