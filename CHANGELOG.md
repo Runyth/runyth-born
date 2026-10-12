@@ -2,7 +2,18 @@
 
 ## Unreleased
 
-- Rename the project to Runyth Born (`runyth-born` for identifiers) across the Go module, npm checks package, browser storage database and fallback keys, release and workflow artifact names, site branding, and documentation; local browser sessions saved under the previous storage names are no longer reachable.
+- Rename the project to Runyth Born (`runyth-born` for identifiers) across the Go module, npm checks package, browser storage database and fallback keys, release and workflow artifact names, site branding, and documentation; sessions saved under the previous storage names are migrated automatically on first open, with the legacy originals kept.
+- Guard acknowledged saves with monotonic revisions enforced through read-compare-update storage transactions: stale tabs can no longer overwrite newer answers by navigating, conflicting edits are rejected with a clear status and preserved recoverably, and navigation positions persist separately from answers.
+- Preserve unmatched saved answers during template reconciliation instead of discarding them; reconciliation now reports exact, fallback, and unmatched counts, and a notice with a review dialog offers copy and discard actions over the preserved copy.
+- Order divergent copies by save revisions instead of wall-clock timestamps, so clock skew or rollback can no longer restore an older snapshot over a newer acknowledged save; fallback storage keeps the newest acknowledged save and portable snapshots carry their revision.
+- Escape ampersands in literal answer and template text so HTML-entity strings such as `&copy;` stay literal in exported Markdown, validated by a real renderer.
+- Correct YAML block scalar handling: explicit indentation indicators, folded blank-line and more-indented semantics, comments after block scalar headers, and plain scalars containing apostrophes; the supported subset is documented.
+- Reject build output directories that overlap tracked source by validating destinations against the tracked inventory instead of a hardcoded directory list.
+- Enforce agreement between a release tag, the packaged commit, and `VERSION` before publication, with matching and mismatching regression coverage.
+- Pin the build toolchain to the supported Go 1.26.9 release line while keeping the language minimum at 1.23.
+- Pin all workflow actions to full commit SHAs and separate read-only release building from write-capable publication, which receives only the validated artifacts.
+- Record release provenance and verify archives: packaging refuses dirty workspaces, scans reachable history for credential-like content, verifies archive inventories and integrity, and publishes SHA-256 checksums for every release.
+- Publish the licence text with the deployed site, add a confirmed "Delete local copy" control in the finish dialog, document browser-origin trust and storage lifecycle limits, and refresh stale audit and repository documentation.
 - Remove browser Go/WebAssembly execution; compile templates to JSON at build time and use plain JavaScript for reconciliation and Markdown downloads.
 - Confirm IndexedDB saves only after transaction commit and fall back after an abort.
 - Preserve cleared answers and restrict fallback merging to globally unique labels.
