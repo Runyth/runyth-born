@@ -1,16 +1,24 @@
 "use strict";
 
 const DATABASE_NAME = "runyth-born";
-const DATABASE_VERSION = 3;
+const DATABASE_VERSION = 4;
 const STORE_NAME = "sessions";
 const POSITION_STORE_NAME = "positions";
 const RECOVERY_STORE_NAME = "recoveries";
+const DELETION_STORE_NAME = "deleted";
 const FALLBACK_PREFIX = "runyth-born.session.v2.";
 
 export class StorageConflictError extends Error {
   constructor() {
     super("A newer version of this questionnaire was saved elsewhere");
     this.name = "StorageConflictError";
+  }
+}
+
+export class SessionDeletedError extends Error {
+  constructor() {
+    super("This questionnaire was deleted from this browser");
+    this.name = "SessionDeletedError";
   }
 }
 
@@ -32,7 +40,7 @@ function openRawDatabase() {
     const request = indexedDB.open(DATABASE_NAME, DATABASE_VERSION);
     request.onupgradeneeded = () => {
       const database = request.result;
-      for (const storeName of [STORE_NAME, POSITION_STORE_NAME, RECOVERY_STORE_NAME]) {
+      for (const storeName of [STORE_NAME, POSITION_STORE_NAME, RECOVERY_STORE_NAME, DELETION_STORE_NAME]) {
         if (!database.objectStoreNames.contains(storeName)) {
           database.createObjectStore(storeName, { keyPath: "id" });
         }
@@ -99,6 +107,14 @@ async function migrateLegacyRecords() {
 
   const records = mergeLegacyRecords({ legacySessions, legacyFallbackSessions, indexedSessions, fallbackSessions });
   for (const record of records) {
+    // The deletion check runs against the already-open migration connection
+    // so it never re-enters the migration itself (F11).
+    const indexedDeletion = database
+      ? await transactionOn(database, DELETION_STORE_NAME, "readonly", getOperate(record.id)).catch(() => false)
+      : false;
+    if (readFallbackTombstone(record.id) || indexedDeletion) {
+      continue;
+    }
     let stored = false;
     if (database) {
       try {
@@ -208,6 +224,7 @@ function transactionOn(database, storeNames, mode, operate) {
     transaction.oncomplete = () => resolve(state.result);
     transaction.onabort = () => {
       reject(state.conflict ? new StorageConflictError()
+        : state.deleted ? new SessionDeletedError()
         : transaction.error || state.error || new Error("Browser storage transaction was aborted"));
     };
     try {
@@ -316,7 +333,9 @@ export function createSession(template, playerName = "") {
 // copies before accepting a write (F01): a stale tab must not write over a
 // newer acknowledged save that lives in the other store, and a recovered
 // primary store must not overwrite newer fallback state. Wall-clock timestamps
-// are display metadata only and never decide answer authority (F03).
+// are display metadata only and never decide answer authority (F03). A
+// deletion marker invalidates every earlier writer generation, so a queued
+// save can never recreate a removed session (F11).
 export async function saveSession(session, { touch = true } = {}) {
   if (!session?.id) {
     throw new Error("Cannot save a session without an identifier");
@@ -326,6 +345,10 @@ export async function saveSession(session, { touch = true } = {}) {
   if (touch) {
     copy.updated_at = new Date().toISOString();
     session.updated_at = copy.updated_at;
+  }
+
+  if (await isSessionDeleted(copy.id)) {
+    throw new SessionDeletedError();
   }
 
   const fallbackRecord = readFallbackRecord(copy.id);
@@ -339,7 +362,7 @@ export async function saveSession(session, { touch = true } = {}) {
     session.revision = saved.revision;
     return saved;
   } catch (error) {
-    if (error instanceof StorageConflictError) {
+    if (error instanceof StorageConflictError || error instanceof SessionDeletedError) {
       throw error;
     }
     try {
@@ -347,7 +370,7 @@ export async function saveSession(session, { touch = true } = {}) {
       session.revision = saved.revision;
       return saved;
     } catch (fallbackError) {
-      if (fallbackError instanceof StorageConflictError) {
+      if (fallbackError instanceof StorageConflictError || fallbackError instanceof SessionDeletedError) {
         throw fallbackError;
       }
       throw new Error(`Could not save locally: ${fallbackError.message || error.message}`);
@@ -358,26 +381,42 @@ export async function saveSession(session, { touch = true } = {}) {
 // Reads and updates the stored record inside one transaction so a concurrent
 // save cannot slip between the comparison and the write (F01). The fallback
 // copy's revision participates in the bump so the primary never ties or lands
-// below a newer acknowledged fallback save.
+// below a newer acknowledged fallback save, and the deletion marker inside the
+// same transaction invalidates a writer that started before the deletion (F11).
 function saveSessionRecord(copy, fallbackRevision) {
-  return runTransaction(STORE_NAME, "readwrite", (store, transaction, state) => {
-    const request = store.get(copy.id);
-    request.onsuccess = () => {
-      const storedRevision = normalizeRevision(request.result?.revision);
-      if (storedRevision > copy.revision) {
-        state.conflict = true;
+  return runTransaction([STORE_NAME, DELETION_STORE_NAME], "readwrite", (stores, transaction, state) => {
+    const [sessions, deletions] = stores;
+    const deletionRequest = deletions.get(copy.id);
+    deletionRequest.onsuccess = () => {
+      if (deletionRequest.result) {
+        state.deleted = true;
         try { transaction.abort(); } catch { /* aborting after another failure is harmless */ }
         return;
       }
-      copy.revision = Math.max(storedRevision, fallbackRevision, copy.revision) + 1;
-      state.result = copy;
-      store.put(copy);
+      const request = sessions.get(copy.id);
+      request.onsuccess = () => {
+        const storedRevision = normalizeRevision(request.result?.revision);
+        if (storedRevision > copy.revision) {
+          state.conflict = true;
+          try { transaction.abort(); } catch { /* aborting after another failure is harmless */ }
+          return;
+        }
+        copy.revision = Math.max(storedRevision, fallbackRevision, copy.revision) + 1;
+        state.result = copy;
+        sessions.put(copy);
+      };
+      return state.result;
     };
     return state.result;
   });
 }
 
 function fallbackSaveRecord(copy) {
+  // The deletion marker is re-checked at execution time so a queued fallback
+  // writer that started before the deletion still cannot recreate it (F11).
+  if (readFallbackTombstone(copy.id)) {
+    throw new SessionDeletedError();
+  }
   const storedRevision = normalizeRevision(readFallbackRecord(copy.id)?.revision);
   if (storedRevision > copy.revision) {
     throw new StorageConflictError();
@@ -415,12 +454,16 @@ export async function loadSession(id) {
 
   // Equal-revision divergent copies across the two stores are handled
   // explicitly: the selected record loads, and the other copy is preserved for
-  // review instead of being silently buried (F01).
+  // review instead of being silently buried (F01). Preservation is awaited so
+  // the caller's own reconciliation writes cannot race it away.
   if (indexedSession && fallbackSession
     && normalizeRevision(indexedSession.revision) === normalizeRevision(fallbackSession.revision)
     && recordsDiverge(indexedSession, fallbackSession)) {
-    void stashDivergentCopy(id, selected === indexedSession ? fallbackSession : indexedSession)
-      .catch(() => undefined);
+    try {
+      await stashDivergentCopy(id, selected === indexedSession ? fallbackSession : indexedSession);
+    } catch {
+      // A failed preservation must not block loading the selected copy.
+    }
   }
 
   // The most recently navigated position is persisted separately from the
@@ -478,9 +521,18 @@ export async function loadSessionPosition(id) {
 }
 
 // Preserved answer copies (unmatched after reconciliation, divergent portable
-// imports, rejected conflicting edits) are recoverable instead of lost.
+// imports, rejected conflicting edits) are recoverable instead of lost. The
+// incoming record is merged with every stored copy first so a write never
+// replaces durable recovery state (F02).
 export async function saveRecovery(id, recovery) {
-  const record = { ...recovery, id, saved_at: new Date().toISOString() };
+  const existing = await loadRecovery(id).catch(() => null);
+  const record = {
+    id,
+    reason: recovery?.reason ?? existing?.reason ?? null,
+    fingerprint: recovery?.fingerprint ?? existing?.fingerprint ?? null,
+    entries: dedupeEntries([...(existing?.entries || []), ...answeredEntries(recovery?.entries)]),
+    saved_at: new Date().toISOString(),
+  };
   try {
     await putRecord(RECOVERY_STORE_NAME, record);
   } catch (indexedDBError) {
@@ -510,10 +562,56 @@ export async function loadRecovery(id) {
   } catch {
     fallbackRecord = null;
   }
-  if (!indexedRecord) { return fallbackRecord; }
-  if (!fallbackRecord) { return indexedRecord; }
-  return String(fallbackRecord.saved_at || "").localeCompare(String(indexedRecord.saved_at || "")) > 0
-    ? fallbackRecord : indexedRecord;
+  return mergeRecoveryRecords(indexedRecord, fallbackRecord, id);
+}
+
+// Normalizes any stored recovery shape to the current `entries` contract.
+// Records from the intermediate implementation stored `questions` instead
+// (F02); every recognized answer from every recognized shape survives, and a
+// record without recognized answers yields nothing.
+function normalizeRecoveryRecord(record, id) {
+  if (!record || typeof record !== "object") {
+    return null;
+  }
+  const collected = [];
+  if (Array.isArray(record.entries)) {
+    collected.push(...record.entries);
+  }
+  if (Array.isArray(record.questions)) {
+    collected.push(...record.questions);
+  }
+  const entries = answeredEntries(collected);
+  if (entries.length === 0) {
+    return null;
+  }
+  return {
+    id,
+    reason: record.reason ?? null,
+    fingerprint: record.fingerprint ?? null,
+    saved_at: record.saved_at ?? null,
+    entries,
+  };
+}
+
+// Merges both stored copies into one reviewable record. Copies are never
+// ordered by timestamp in a way that can lose an acknowledged copy (F02):
+// entries are unioned, identical answers collapse, divergent answers stay
+// side by side for review, and the display metadata comes from the copy with
+// the newer recorded save time.
+export function mergeRecoveryRecords(primaryRecord, fallbackRecord, id) {
+  const primary = normalizeRecoveryRecord(primaryRecord, id);
+  const fallback = normalizeRecoveryRecord(fallbackRecord, id);
+  if (!primary) { return fallback; }
+  if (!fallback) { return primary; }
+  const fallbackNewer = String(fallbackRecord.saved_at || "").localeCompare(String(primaryRecord.saved_at || "")) > 0;
+  const head = fallbackNewer ? fallback : primary;
+  return {
+    id,
+    reason: head.reason,
+    fingerprint: head.fingerprint,
+    saved_at: head.saved_at,
+    entries: dedupeEntries([...primary.entries, ...fallback.entries]),
+  };
 }
 
 export async function deleteRecovery(id) {
@@ -532,18 +630,28 @@ export async function deleteRecovery(id) {
 // Removes every stored copy of a questionnaire: the session, its navigation
 // position, any preserved recovery record (including fallback mirrors), and
 // the copies left by the legacy migration, so a deleted questionnaire cannot
-// return on the next open (F11). Cleanup is reported as incomplete only when
-// an IndexedDB copy may survive; a missing IndexedDB with a successful
-// fallback cleanup is a complete deletion.
+// return on the next open (F11). A deletion marker is written before the
+// records are removed, in both stores, so an already-queued writer from any
+// tab is invalidated instead of recreating the session; the marker holds only
+// the identifier and deletion time, never answer content (F11). Cleanup is
+// reported as incomplete only when an IndexedDB copy may survive; a missing
+// IndexedDB with a successful fallback cleanup is a complete deletion.
 export async function deleteSession(id) {
   if (!id) {
     throw new Error("A session identifier is required");
   }
+  try {
+    localStorage.setItem(fallbackTombstoneKey(id), JSON.stringify({ id, deleted_at: new Date().toISOString() }));
+  } catch { /* The fallback tombstone may be unwritable; the IndexedDB marker still applies. */ }
+
   let removedIndexedDB = true;
   if (globalThis.indexedDB) {
     try {
-      await runTransaction([STORE_NAME, POSITION_STORE_NAME, RECOVERY_STORE_NAME], "readwrite", (stores, transaction, state) => {
-        const [sessions, positions, recoveries] = stores;
+      await runTransaction([STORE_NAME, POSITION_STORE_NAME, RECOVERY_STORE_NAME, DELETION_STORE_NAME], "readwrite", (stores, transaction, state) => {
+        const [sessions, positions, recoveries, deletions] = stores;
+        // The tombstone is committed together with the record removal so no
+        // concurrent writer can observe the session without the marker.
+        deletions.put({ id, deleted_at: new Date().toISOString() });
         sessions.delete(id);
         positions.delete(id);
         recoveries.delete(id);
@@ -654,6 +762,38 @@ function readFallbackRecord(id) {
   }
 }
 
+function fallbackTombstoneKey(id) {
+  return `${FALLBACK_PREFIX}${id}.deleted`;
+}
+
+function readFallbackTombstone(id) {
+  try {
+    const raw = localStorage.getItem(fallbackTombstoneKey(id));
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+// Whether a deletion marker exists in either store. A marked identifier is
+// unreloadable and unwritable from any tab, which is what stops an
+// already-queued save from recreating a removed questionnaire (F11).
+export async function isSessionDeleted(id) {
+  if (!id) {
+    return false;
+  }
+  if (readFallbackTombstone(id)) {
+    return true;
+  }
+  try {
+    const marker = await getRecord(DELETION_STORE_NAME, id);
+    return Boolean(marker);
+  } catch {
+    // An unavailable IndexedDB cannot undo the fallback marker.
+    return false;
+  }
+}
+
 // Preserved-answer entries are the shared shape between the storage layer and
 // the wizard review dialog: one record per at-risk answered question.
 export function answeredEntries(questions) {
@@ -684,7 +824,9 @@ export function dedupeEntries(entries) {
 
 async function stashDivergentCopy(id, record) {
   const existing = await loadRecovery(id).catch(() => null);
-  const entries = dedupeEntries([...(existing?.entries || []), ...answeredEntries([record])]);
+  // The unselected copy is a whole session record: its preserved answers are
+  // the real `questions` entries, which is where session answers live (F01).
+  const entries = dedupeEntries([...(existing?.entries || []), ...answeredEntries(record?.questions)]);
   if (entries.length === 0) {
     return null;
   }
@@ -699,7 +841,7 @@ function fallbackList() {
   const sessions = [];
   for (let index = 0; index < localStorage.length; index += 1) {
     const key = localStorage.key(index);
-    if (!key?.startsWith(FALLBACK_PREFIX) || key.endsWith(".position") || key.endsWith(".recovery")) {
+    if (!key?.startsWith(FALLBACK_PREFIX) || key.endsWith(".position") || key.endsWith(".recovery") || key.endsWith(".deleted")) {
       continue;
     }
     try {
