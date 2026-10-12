@@ -19,6 +19,13 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      - name: Verify the release tag matches the declared version
+        run: |
+          scripts/check-release-tag.sh "${GITHUB_REF_NAME}" "$(tr -d '[:space:]' < VERSION)"
+          test "$(git rev-parse HEAD)" = "$(git rev-parse "${GITHUB_REF_NAME}^{commit}")"
+        env:
+          GITHUB_REF_NAME: ${{ github.ref_name }}
+
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
