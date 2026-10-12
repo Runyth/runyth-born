@@ -68,6 +68,7 @@ def main() -> None:
     root / "404.html",
     root / ".nojekyll",
     root / "assets" / "runtime.js",
+    root / "license.txt",
     root / "templates" / "catalog.json",
   ]
   for path in required:

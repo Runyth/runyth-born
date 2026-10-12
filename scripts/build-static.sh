@@ -39,6 +39,7 @@ rm -rf -- "${output_dir}"
 mkdir -p -- "${output_dir}/templates" "${output_dir}/assets"
 cp -a -- "${project_root}/site/." "${output_dir}/"
 cp -- "${project_root}/AI_TEMPLATE_PROMPT.md" "${output_dir}/ai-template-prompt.txt"
+cp -- "${project_root}/LICENSE" "${output_dir}/license.txt"
 cp -- "${project_root}/VERSION" "${output_dir}/VERSION"
 
 # GitHub serves 404.html at the missing URL, including nested paths. Configure
