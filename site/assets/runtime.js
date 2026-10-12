@@ -26,6 +26,22 @@ export function escapeAnswer(value) {
   return String(value).replace(/[\\`*_{}\[\]()<>!#~+\-=.|&]/gu, "\\$&");
 }
 
+// Renders a preserved-answer record with the same literal-text contract as
+// ordinary exported Markdown: headings and answers are escaped, entity
+// strings, heading markers, and raw HTML cannot change meaning (F07).
+export function preservedAnswersMarkdown(entries) {
+  let output = "# Preserved answers\n\n";
+  for (const entry of entries || []) {
+    const heading = [...(entry.breadcrumb || []), entry.label].filter(Boolean).join(" › ") || "Unmatched answer";
+    output += `## ${escapeAnswer(heading)}\n\n`;
+    const answer = String(entry.answer || "").replace(/\r\n?/gu, "\n");
+    if (answer) {
+      output += `${answer.split("\n").map(escapeAnswer).join("  \n")}\n\n`;
+    }
+  }
+  return output.trimEnd() + "\n";
+}
+
 export async function callCore(operation, { source, saved_questions = [] } = {}) {
   if (!["analyze", "reconcile"].includes(operation)) {
     throw new Error(`Unsupported core operation ${operation}`);

@@ -3,16 +3,12 @@ import test from "node:test";
 
 import { callCore, escapeAnswer } from "../../site/assets/runtime.js";
 
-// The renderer is a development-only dependency; environments without an
-// install (for example a fresh Source ZIP extraction) skip the render checks.
-let MarkdownIt = null;
-try {
-  ({ default: MarkdownIt } = await import("markdown-it"));
-} catch {
-  // Renderer-based validation stays available wherever the dev deps exist.
-}
-
-const renderer = MarkdownIt ? new MarkdownIt({ html: false, linkify: false }) : null;
+// The renderer is a required development dependency for this fidelity gate:
+// it must fail loudly when unavailable instead of silently reducing
+// coverage (F13). Every workflow installs the locked dependencies before
+// running the quality gates.
+const { default: MarkdownIt } = await import("markdown-it");
+const renderer = new MarkdownIt({ html: false, linkify: false });
 
 function compiledTemplate(answer) {
   return JSON.stringify({
@@ -24,7 +20,7 @@ function compiledTemplate(answer) {
   });
 }
 
-test("entity-like answer text survives the exported Markdown round trip", { skip: !renderer }, async () => {
+test("entity-like answer text survives the exported Markdown round trip", async () => {
   const answer = "Alice &copy; &lt;test&gt; &#169; &#x41; & Tom & Jerry";
   const result = await callCore("reconcile", {
     source: compiledTemplate(),

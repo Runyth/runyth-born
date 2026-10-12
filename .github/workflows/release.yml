@@ -37,11 +37,14 @@ jobs:
         with:
           node-version: "24"
 
+      - name: Install Node dependencies
+        run: npm ci
+
       - name: Build and package release
         run: make package
 
       - name: Install browser test tools
-        run: npm ci && npx playwright install --with-deps chromium
+        run: npx playwright install --with-deps chromium
 
       - name: Check static browser workflows
         run: npm run test:browser
