@@ -35,6 +35,27 @@ python3 "${script_dir}/validate-static.py" "${dist_dir}"
 cp -a -- "${project_root}" "${temporary_root}/${source_name}"
 rm -rf -- "${temporary_root}/${source_name}/dist" "${temporary_root}/${source_name}/release" "${temporary_root}/${source_name}/node_modules"
 
+# Publish exactly the committed tree: ignored and untracked workspace files
+# never enter the archive. Local navigation metadata is dropped, and the
+# copied Git configuration loses any embedded credentials (F12).
+(
+  cd -- "${temporary_root}/${source_name}"
+  git clean -xdfq
+  rm -rf -- .git/logs .git/COMMIT_EDITMSG .git/MERGE_MSG .git/ORIG_HEAD .git/FETCH_HEAD .git/gc.log .git/gc.pid
+)
+python3 - "${temporary_root}/${source_name}/.git/config" <<'PY'
+import re
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+if path.exists():
+    text = path.read_text(encoding="utf-8")
+    scrubbed = re.sub(r"(://[^/@\s]+):[^/@\s]+@", r"\1@", text)
+    if scrubbed != text:
+        path.write_text(scrubbed, encoding="utf-8")
+PY
+
 mkdir -p -- "${temporary_root}/${runtime_name}" "${temporary_root}/${docs_name}"
 cp -a -- "${dist_dir}/." "${temporary_root}/${runtime_name}/"
 
@@ -138,6 +159,47 @@ with open(checksum_path, "w", encoding="utf-8") as checksum_file:
 
 print(f"Release verification passed: {len(archives)} archives at revision {revision}")
 PY
+
+# Verify the actual published Source ZIP content: extract it, check the
+# Git object integrity, compare the shipped project inventory against the
+# tracked tree, scan every published object and Git file with redacted
+# diagnostics, and confirm the configuration carries no embedded
+# credentials (F12).
+declare -r verification_root="$(mktemp -d)"
+trap 'rm -rf -- "${temporary_root}" "${verification_root}"' EXIT
+python3 - "${release_dir}/${source_name}.zip" "${verification_root}" <<'PY'
+import sys
+import zipfile
+from pathlib import Path
+
+archive_path = Path(sys.argv[1])
+target = Path(sys.argv[2])
+with zipfile.ZipFile(archive_path) as bundle:
+    for info in bundle.infolist():
+        bundle.extract(info, target)
+PY
+(
+  cd -- "${verification_root}/${source_name}"
+  git fsck --no-progress --full --strict
+  declared="$(git ls-files | sort)"
+  shipped="$(find . -type f ! -path './.git/*' | sed 's|^./||' | sort)"
+  test "${declared}" = "${shipped}" || {
+    diff <(printf '%s\n' "${declared}") <(printf '%s\n' "${shipped}") >&2
+    printf 'The shipped Source ZIP inventory does not match the committed tree\n' >&2
+    exit 1
+  }
+  test "$(git -C . rev-parse HEAD)" = "${revision}" || {
+    printf 'The archived Git revision does not match the packaged revision\n' >&2
+    exit 1
+  }
+  if grep -E -q '(://[^/@[:space:]]+):[^/@[:space:]]+@' .git/config; then
+    printf 'The archived Git configuration still contains credential-bearing URLs\n' >&2
+    exit 1
+  fi
+  git config --get-regexp '^url\.' >/dev/null 2>&1 || true
+  bash scripts/scan-source-history.sh
+)
+printf 'Source ZIP verification passed: committed tree, integrity, inventory, and privacy\n'
 
 printf 'Created release artifacts:\n'
 printf '  %s\n' "${release_dir}/${source_name}.zip"
