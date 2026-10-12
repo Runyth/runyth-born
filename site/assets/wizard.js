@@ -508,12 +508,12 @@ async function importPortableSession() {
   const importedRevision = normalizeRevision(imported.revision);
   if (importedRevision > existingRevision) {
     if (sessionsDiverge(existing, imported)) {
-      await preserveRecovery(imported.id, "import", [existing]);
+      await preserveRecovery(imported.id, "import", existing.questions);
     }
     return { session: imported, storedAlready: false };
   }
   if (importedRevision === existingRevision && sessionsDiverge(existing, imported)) {
-    await preserveRecovery(imported.id, "import", [imported]);
+    await preserveRecovery(imported.id, "import", imported.questions);
     return { session: existing, storedAlready: true };
   }
   return { session: existing, storedAlready: true };
