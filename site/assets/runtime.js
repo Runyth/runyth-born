@@ -21,8 +21,9 @@ function sectionsFor(questions) {
 }
 
 export function escapeAnswer(value) {
-  // Answers are literal text, including punctuation starting continuation lines.
-  return String(value).replace(/[\\`*_{}\[\]()<>!#~+\-=.|]/gu, "\\$&");
+  // Answers are literal text, including punctuation starting continuation
+  // lines and HTML-entity strings such as &copy;.
+  return String(value).replace(/[\\`*_{}\[\]()<>!#~+\-=.|&]/gu, "\\$&");
 }
 
 export async function callCore(operation, { source, saved_questions = [] } = {}) {

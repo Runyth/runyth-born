@@ -121,3 +121,30 @@ func TestLiteralTextCannotBecomeMarkdownStructure(t *testing.T) {
 		t.Fatalf("space-only inline code changed: %q", got)
 	}
 }
+
+func TestLiteralHTMLEntityStringsStayLiteral(t *testing.T) {
+	input := "Alice &copy; &lt;test&gt; &#169; &#x41; & Tom & Jerry"
+	want := "Alice \\&copy; \\&lt;test\\&gt; \\&\\#169; \\&\\#x41; \\& Tom \\& Jerry"
+	if got := escapeText(input, inlineContext{}); got != want {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+
+	document := mdast.Document{
+		"type": "root",
+		"children": []any{
+			map[string]any{
+				"type": "paragraph",
+				"children": []any{
+					map[string]any{"type": "text", "value": "Alice &copy; &lt;test&gt;"},
+				},
+			},
+		},
+	}
+	output, err := Render(document)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(output, "Alice \\&copy; \\&lt;test\\&gt;") {
+		t.Fatalf("entity strings were not escaped in rendered Markdown:\n%s", output)
+	}
+}

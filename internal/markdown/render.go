@@ -401,7 +401,7 @@ func escapeText(value string, context inlineContext) string {
 	var builder strings.Builder
 	for _, character := range value {
 		switch character {
-		case '\\', '`', '*', '_', '[', ']', '<', '>', '~', '#', '+', '-', '=', '!', '.', '(', ')', '{', '}':
+		case '\\', '`', '*', '_', '[', ']', '<', '>', '~', '#', '+', '-', '=', '!', '.', '(', ')', '{', '}', '&':
 			builder.WriteByte('\\')
 			builder.WriteRune(character)
 		case '|':
