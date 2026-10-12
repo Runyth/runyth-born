@@ -35,6 +35,7 @@ export async function callCore(operation, { source, saved_questions = [] } = {})
     throw new Error("Compiled template format is invalid; rebuild the static site");
   }
   const questions = structuredClone(template.questions);
+  const reconciliation = { exact: 0, fallback: 0, unmatched: 0, orphaned: [] };
   if (operation === "reconcile") {
     const exact = new Map(saved_questions.map((question) => [question.id, question]));
     const currentLabels = new Map();
@@ -47,13 +48,32 @@ export async function callCore(operation, { source, saved_questions = [] } = {})
       const label = fallbackLabel(question);
       savedLabels.set(label, [...(savedLabels.get(label) || []), question]);
     }
+    const consumed = new Set();
     for (const question of questions) {
       const label = fallbackLabel(question);
-      const saved = exact.get(question.id)
-        || (currentLabels.get(label) === 1 && savedLabels.get(label)?.length === 1
-          ? savedLabels.get(label)[0] : undefined);
-      if (saved) {
+      const saved = exact.get(question.id);
+      if (saved && !consumed.has(saved)) {
         question.answer = String(saved.answer ?? "");
+        consumed.add(saved);
+        reconciliation.exact += 1;
+        continue;
+      }
+      if (currentLabels.get(label) === 1 && savedLabels.get(label)?.length === 1 && !consumed.has(savedLabels.get(label)[0])) {
+        question.answer = String(savedLabels.get(label)[0].answer ?? "");
+        consumed.add(savedLabels.get(label)[0]);
+        reconciliation.fallback += 1;
+      }
+    }
+    for (const saved of saved_questions) {
+      if (!consumed.has(saved)) {
+        reconciliation.unmatched += 1;
+        reconciliation.orphaned.push({
+          id: String(saved.id || ""),
+          fallback_id: String(saved.fallback_id || ""),
+          label: String(saved.label || fallbackLabel(saved) || ""),
+          breadcrumb: Array.isArray(saved.breadcrumb) ? saved.breadcrumb.map(String) : [],
+          answer: String(saved.answer ?? ""),
+        });
       }
     }
   }
@@ -73,5 +93,6 @@ export async function callCore(operation, { source, saved_questions = [] } = {})
     questions,
     sections: sectionsFor(questions),
     markdown,
+    reconciliation,
   };
 }
