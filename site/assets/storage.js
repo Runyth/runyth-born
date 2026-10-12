@@ -280,7 +280,7 @@ function pickNewer(left, right) {
 
 // Answers decide divergence between two copies of one session; timestamps and
 // positions never do (F01/F03).
-function recordsDiverge(left, right) {
+export function recordsDiverge(left, right) {
   if (!left || !right) { return false; }
   if (String(left.player_name || "") !== String(right.player_name || "")) { return true; }
   if (Boolean(left.completed) !== Boolean(right.completed)) { return true; }
@@ -330,8 +330,7 @@ export async function saveSession(session, { touch = true } = {}) {
 
   const fallbackRecord = readFallbackRecord(copy.id);
   const fallbackRevision = normalizeRevision(fallbackRecord?.revision);
-  if (fallbackRevision > copy.revision
-    || (fallbackRevision === copy.revision && fallbackRecord && recordsDiverge(fallbackRecord, copy))) {
+  if (fallbackRevision > copy.revision) {
     throw new StorageConflictError();
   }
 

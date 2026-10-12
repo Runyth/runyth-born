@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { callCore, escapeAnswer } from "../../site/assets/runtime.js";
+import { callCore, escapeAnswer, preservedAnswersMarkdown } from "../../site/assets/runtime.js";
 
 // The renderer is a required development dependency for this fidelity gate:
 // it must fail loudly when unavailable instead of silently reducing
@@ -37,4 +37,23 @@ test("entity-like answer text survives the exported Markdown round trip", async 
   assert.ok(rendered.includes("Tom &amp; Jerry"), rendered);
   assert.ok(!rendered.includes("©"), rendered);
   assert.ok(!rendered.includes("<test>"), rendered);
+});
+
+test("preserved-answer serialization keeps entity strings, headings, and raw HTML literal", async () => {
+  const output = preservedAnswersMarkdown([
+    { label: "Age & origin:", breadcrumb: ["Story", "Core"], answer: "Alice &copy; &lt;test&gt;\n# heading\n<script>" },
+    { label: "Name", breadcrumb: [], answer: "Ordinary & answer" },
+  ]);
+
+  assert.ok(output.includes("## Story › Core › Age \\& origin:"), output);
+  assert.ok(output.includes("Alice \\&copy; \\&lt;test\\&gt;  \n\\# heading  \n\\<script\\>"), output);
+  assert.ok(output.includes("## Name"), output);
+  assert.ok(output.includes("Ordinary \\& answer"), output);
+
+  const rendered = renderer.render(output);
+  assert.ok(!rendered.includes("©"), rendered);
+  assert.ok(!rendered.includes("<test>"), rendered);
+  assert.ok(!rendered.includes('<script>'), rendered);
+  assert.ok(!rendered.includes("<h1>heading</h1>"), rendered);
+  assert.ok(rendered.includes("&amp;copy;"), rendered);
 });

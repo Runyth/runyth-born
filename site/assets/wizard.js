@@ -1,13 +1,16 @@
 "use strict";
 
 import { buildResumeURL, decodeResumePayload, resumePayloadFromLocation } from "./portable.js";
-import { callCore } from "./runtime.js";
+import { callCore, preservedAnswersMarkdown } from "./runtime.js";
 import {
+  answeredEntries,
+  dedupeEntries,
   deleteRecovery,
   deleteSession,
   loadRecovery,
   loadSession,
   normalizeRevision,
+  recordsDiverge,
   saveRecovery,
   saveSession,
   saveSessionPosition,
@@ -50,6 +53,7 @@ const elements = {
   orphanList: document.getElementById("orphan-list"),
   orphanCopy: document.getElementById("orphan-copy"),
   orphanDiscard: document.getElementById("orphan-discard"),
+  orphanImport: document.getElementById("orphan-import"),
   title: document.getElementById("wizard-template-name"),
   player: document.getElementById("wizard-player-name"),
 };
@@ -68,6 +72,7 @@ let toastTimer = null;
 let navigating = false;
 let ready = false;
 let preservedEntries = [];
+let preservedReason = "reconcile";
 let deleteArmed = false;
 
 const CONFLICT_STATUS = "A newer version was saved elsewhere — reload to refresh";
@@ -258,6 +263,11 @@ function flushSave() {
   savePromise = savePromise
     .catch(() => undefined)
     .then(async () => {
+      // Carry the currently acknowledged revision into the queued snapshot at
+      // execution time, so this tab's serialized saves never conflict with
+      // their own predecessor (F09), while external stale copies still
+      // conflict through the stored revision.
+      snapshot.revision = normalizeRevision(session.revision);
       const saved = await saveSession(snapshot);
       session.updated_at = saved.updated_at;
       session.revision = saved.revision;
@@ -268,9 +278,15 @@ function flushSave() {
         dirty ? "saving" : "saved",
       );
     })
-    .catch((error) => {
+    .catch(async (error) => {
       if (error instanceof StorageConflictError) {
-        void preserveRecovery(session.id, "conflict", session.questions).catch(() => undefined);
+        try {
+          const recovery = await preserveRecovery(session.id, "conflict", session.questions);
+          preservedEntries = recovery?.entries || preservedEntries;
+          showPreservedNotice(preservedEntries.length, "conflict");
+        } catch {
+          showToast("Could not preserve the rejected edit locally");
+        }
         setSaveStatus(CONFLICT_STATUS, "conflict");
         return;
       }
@@ -504,97 +520,61 @@ async function importPortableSession() {
   }
 
   // Revisions, not wall clocks, decide which divergent copy is newer (F03).
+  // Every divergent branch is preserved regardless of the local counter, so a
+  // lower-revision portable copy is never silently dropped (F10).
   const existingRevision = normalizeRevision(existing.revision);
   const importedRevision = normalizeRevision(imported.revision);
-  if (importedRevision > existingRevision) {
-    if (sessionsDiverge(existing, imported)) {
+  if (recordsDiverge(existing, imported)) {
+    if (importedRevision > existingRevision) {
       await preserveRecovery(imported.id, "import", existing.questions);
+      return { session: imported, storedAlready: false };
     }
-    return { session: imported, storedAlready: false };
-  }
-  if (importedRevision === existingRevision && sessionsDiverge(existing, imported)) {
     await preserveRecovery(imported.id, "import", imported.questions);
     return { session: existing, storedAlready: true };
   }
   return { session: existing, storedAlready: true };
 }
 
-function sessionsDiverge(left, right) {
-  if (String(left.player_name || "") !== String(right.player_name || "")) {
-    return true;
-  }
-  if (Boolean(left.completed) !== Boolean(right.completed)) {
-    return true;
-  }
-  const leftAnswers = new Map((left.questions || []).map((item) => [String(item.id || ""), String(item.answer ?? "")]));
-  const rightQuestions = right.questions || [];
-  for (const item of rightQuestions) {
-    if ((leftAnswers.get(String(item.id || "")) ?? "") !== String(item.answer ?? "")) {
-      return true;
-    }
-  }
-  const answeredCount = (questions) => (questions || []).filter((item) => String(item.answer || "").trim() !== "").length;
-  return answeredCount(left.questions) !== answeredCount(rightQuestions);
-}
-
-function answeredEntries(questions) {
-  return (questions || [])
-    .filter((item) => String(item.answer || "").trim() !== "")
-    .map((item) => ({
-      id: String(item.id || ""),
-      fallback_id: String(item.fallback_id || ""),
-      label: String(item.label || String(item.fallback_id || "").replace(/#\d+$/u, "") || "Unmatched answer"),
-      breadcrumb: Array.isArray(item.breadcrumb) ? item.breadcrumb.map(String) : [],
-      answer: String(item.answer || ""),
-    }));
-}
-
-function dedupeEntries(entries) {
-  const seen = new Set();
-  const result = [];
-  for (const entry of entries) {
-    const key = [...entry.breadcrumb, entry.label, entry.answer].join("\u0000");
-    if (seen.has(key)) {
-      continue;
-    }
-    seen.add(key);
-    result.push(entry);
-  }
-  return result;
-}
-
 async function preserveRecovery(id, reason, questions, fingerprint) {
   const existing = await loadRecovery(id).catch(() => null);
-  const entries = dedupeEntries([...(existing?.questions || []), ...answeredEntries(questions)]);
+  const entries = dedupeEntries([...(existing?.entries || []), ...answeredEntries(questions)]);
   if (entries.length === 0) {
     return null;
   }
   return saveRecovery(id, {
     reason,
     fingerprint: fingerprint ?? existing?.fingerprint ?? null,
-    questions: entries,
+    entries,
   });
 }
 
-function showPreservedNotice(count) {
-  elements.reconcileText.textContent = `${count} saved answer${count === 1 ? "" : "s"} no longer fit this questionnaire and ${count === 1 ? "was" : "were"} preserved for review.`;
+const preservedExplanations = {
+  reconcile: (count) => count === 1
+    ? "1 saved answer no longer fits this questionnaire and was preserved for review."
+    : `${count} saved answers no longer fit this questionnaire and were preserved for review.`,
+  import: (count) => count === 1
+    ? "1 answer from the opened resume link diverged from the saved questionnaire and was preserved for review."
+    : `${count} answers from the opened resume link diverged from the saved questionnaire and were preserved for review.`,
+  conflict: (count) => count === 1
+    ? "1 edited answer could not be saved because a newer version exists elsewhere and was preserved for review."
+    : `${count} edited answers could not be saved because a newer version exists elsewhere and were preserved for review.`,
+  divergent: (count) => count === 1
+    ? "1 answer from a divergent copy of this questionnaire was preserved for review."
+    : `${count} answers from a divergent copy of this questionnaire were preserved for review.`,
+};
+
+function showPreservedNotice(count, reason) {
+  preservedReason = reason || preservedReason;
+  elements.reconcileText.textContent =
+    (preservedExplanations[preservedReason] || preservedExplanations.reconcile)(count);
   elements.reconcileNotice.hidden = false;
 }
 
-async function refreshPreservedEntries(recovery) {
-  preservedEntries = dedupeEntries([...(recovery?.questions || []), ...preservedEntries]);
+function refreshPreservedEntries(recovery) {
+  preservedEntries = dedupeEntries([...(recovery?.entries || []), ...preservedEntries]);
   if (preservedEntries.length > 0) {
-    showPreservedNotice(preservedEntries.length);
+    showPreservedNotice(preservedEntries.length, recovery?.reason);
   }
-}
-
-function preservedMarkdown() {
-  let output = "# Preserved answers\n\n";
-  for (const entry of preservedEntries) {
-    const heading = [...entry.breadcrumb, entry.label].filter(Boolean).join(" › ") || "Unmatched answer";
-    output += `## ${heading}\n\n${entry.answer}\n\n`;
-  }
-  return output.trimEnd() + "\n";
 }
 
 function showOrphanDialog() {
@@ -619,11 +599,14 @@ function showOrphanDialog() {
 
     elements.orphanList.append(item);
   }
+  // Choosing the imported branch is only meaningful when the preserved copy
+  // came from an import; reconciled and rejected edits stay review-only.
+  elements.orphanImport.hidden = preservedReason !== "import";
   elements.orphanDialog.showModal();
 }
 
 async function copyPreservedEntries() {
-  const content = preservedMarkdown();
+  const content = preservedAnswersMarkdown(preservedEntries);
   try {
     await navigator.clipboard.writeText(content);
     showToast("✓ Preserved answers copied as Markdown.", "copy-success");
@@ -637,6 +620,41 @@ async function discardPreservedEntries() {
   preservedEntries = [];
   elements.reconcileNotice.hidden = true;
   showToast("Preserved copy discarded.");
+}
+
+// Offers the imported branch as the questionnaire's answers: the preserved
+// entries are reconciled through the normal match rules instead of being
+// silently preferred or ignored (F10).
+async function importPreservedEntries() {
+  if (!session || preservedEntries.length === 0) {
+    return;
+  }
+  const result = await callCore("reconcile", {
+    source: templateSource,
+    extension: catalogEntry.extension,
+    saved_questions: preservedEntries,
+  });
+  const leftovers = (result.reconciliation?.orphaned || [])
+    .filter((item) => String(item.answer || "").trim() !== "");
+  session.questions = result.questions;
+  sections = result.sections;
+  session.template_fingerprint = result.fingerprint;
+  const saved = await saveSession(session, { touch: true });
+  session.revision = saved.revision;
+  session.updated_at = saved.updated_at;
+  currentIndex = Math.min(Math.max(0, Math.floor(Number(session.current_question) || 0)), session.questions.length - 1);
+  session.current_question = currentIndex;
+  await deleteRecovery(session.id);
+  preservedEntries = [];
+  elements.reconcileNotice.hidden = true;
+  elements.orphanDialog.close();
+  renderQuestion({ focus: true });
+  setSaveStatus("Saved locally", "saved");
+  if (leftovers.length > 0) {
+    const recovery = await preserveRecovery(session.id, "import", leftovers);
+    preservedEntries = recovery?.entries || [];
+    showPreservedNotice(preservedEntries.length, "import");
+  }
 }
 
 function firstUnanswered(questions) {
@@ -702,13 +720,13 @@ async function initialise() {
 
     if (unmatched.length > 0) {
       const recovery = await preserveRecovery(session.id, "reconcile", savedQuestions, priorFingerprint);
-      preservedEntries = recovery?.questions || [];
-      showPreservedNotice(preservedEntries.length);
+      preservedEntries = recovery?.entries || [];
+      showPreservedNotice(preservedEntries.length, recovery?.reason || "reconcile");
     } else {
       const recovery = await loadRecovery(session.id).catch(() => null);
-      preservedEntries = recovery?.questions || [];
+      preservedEntries = recovery?.entries || [];
       if (preservedEntries.length > 0) {
-        showPreservedNotice(preservedEntries.length);
+        showPreservedNotice(preservedEntries.length, recovery?.reason);
       }
     }
 
@@ -768,6 +786,14 @@ elements.finishCopyLink?.addEventListener("click", () => void copyResumeLink({ p
 elements.finishDelete?.addEventListener("click", () => void deleteLocalCopy());
 elements.reviewPreserved?.addEventListener("click", showOrphanDialog);
 elements.orphanCopy?.addEventListener("click", () => void copyPreservedEntries());
+elements.orphanImport?.addEventListener("click", () => void importPreservedEntries().catch(async (error) => {
+  if (error instanceof StorageConflictError) {
+    setSaveStatus(CONFLICT_STATUS, "conflict");
+    showToast("A newer version was saved elsewhere — reload to refresh");
+    return;
+  }
+  showToast(`Could not import the preserved answers: ${error.message}`);
+}));
 elements.orphanDiscard?.addEventListener("click", () => void discardPreservedEntries().catch((error) => {
   showToast(`Could not discard the preserved copy: ${error.message}`);
 }));
