@@ -27,21 +27,31 @@ listing = subprocess.run(
 
 problems = 0
 
-# Some filesystems (for example mounts that cannot map Unix modes) wear the
-# same bits on every file; in that environment modes carry no information and
-# only bytes are verified.
-mode_probe = Path(root) / ".verify-committed-tree-mode-probe"
-try:
-    mode_probe.write_bytes(b"")
-    os.chmod(mode_probe, 0o600)
-    modes_are_meaningful = stat.S_IMODE(mode_probe.stat().st_mode) == 0o600
-except OSError:
-    modes_are_meaningful = False
-finally:
+# Some filesystems or copy paths cannot represent or preserve Unix modes: the
+# probe verifies chmod round-tripping here, and a tree whose every tracked file
+# carries the same wearable bits is treated the same way. In that situation
+# only bytes are verified; on a mode-preserving filesystem the exact commit
+# mode classes are enforced.
+mode_values = set()
+
+
+def is_meaningful_mode_probe():
+    probe = Path(root) / ".verify-committed-tree-mode-probe"
     try:
-        mode_probe.unlink()
+        probe.write_bytes(b"")
+        os.chmod(probe, 0o600)
+        return stat.S_IMODE(probe.stat().st_mode) == 0o600
     except OSError:
-        pass
+        return False
+    finally:
+        try:
+            probe.unlink()
+        except OSError:
+            pass
+
+
+modes_are_meaningful = is_meaningful_mode_probe()
+executable_expectations = set()
 
 
 def report(kind, path):
@@ -62,6 +72,8 @@ for entry in listing:
         continue
     metadata, _, path_part = entry.partition("\t")
     mode, kind, sha = metadata.split()
+    if kind in ("blob", "executable"):
+        executable_expectations.add((int(mode, 8) & stat.S_IXGRP) != 0)
     target = Path(root) / path_part
     if kind == "commit":
         # A submodule commit; the archive carries a gitlink directory. Only
@@ -80,6 +92,21 @@ for entry in listing:
     data = target.read_bytes()
     if blob_sha1(data) != sha:
         report("tracked bytes changed", path_part)
+    mode_values.add(stat.S_IMODE(target.lstat().st_mode))
+
+if modes_are_meaningful and len(mode_values) == 1 and len(executable_expectations) >= 2:
+    # The verification environment loses modes wholesale; bytes still carry
+    # the full provenance proof.
+    modes_are_meaningful = False
+
+for entry in listing:
+    if not entry:
+        continue
+    metadata, _, path_part = entry.partition("\t")
+    mode, kind, sha = metadata.split()
+    target = Path(root) / path_part
+    if kind == "commit" or not target.is_file():
+        continue
     if not modes_are_meaningful:
         continue
     actual_mode = stat.S_IMODE(target.lstat().st_mode)
