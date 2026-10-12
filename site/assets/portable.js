@@ -73,6 +73,7 @@ function resumableSnapshot(session) {
     player_name: session.player_name || "",
     created_at: session.created_at,
     updated_at: session.updated_at,
+    revision: Number.isSafeInteger(session.revision) && session.revision > 0 ? session.revision : 0,
     current_question: session.current_question || 0,
     completed: Boolean(session.completed),
     questions: Array.isArray(session.questions)
@@ -83,6 +84,10 @@ function resumableSnapshot(session) {
       }))
       : [],
   };
+}
+
+function normalizeTimestamp(value) {
+  return typeof value === "string" && !Number.isNaN(Date.parse(value)) ? value : new Date().toISOString();
 }
 
 export async function encodeResumePayload(session) {
@@ -128,6 +133,9 @@ export async function decodeResumePayload(payload) {
     throw new Error("Resume payload contains an invalid template filename");
   }
   decoded.player_name = String(decoded.player_name || "").trim().replace(/\s+/gu, " ").slice(0, 100);
+  decoded.revision = Number.isSafeInteger(decoded.revision) && decoded.revision > 0 ? decoded.revision : 0;
+  decoded.created_at = normalizeTimestamp(decoded.created_at);
+  decoded.updated_at = normalizeTimestamp(decoded.updated_at);
   decoded.current_question = Number.isSafeInteger(decoded.current_question) && decoded.current_question >= 0
     ? decoded.current_question : 0;
   decoded.completed = decoded.completed === true;
