@@ -55,3 +55,27 @@ test("a valid external empty output directory still builds", async () => {
     await fs.rm(external, { recursive: true, force: true });
   }
 });
+
+test("invoking the build through a symlinked checkout still rejects tracked outputs", async () => {
+  const copy = await disposableCopy();
+  const alias = path.join(os.tmpdir(), `runyth-born-alias-${process.pid}-${Date.now()}`);
+  await fs.symlink(copy, alias, "dir");
+  try {
+    const result = await run("bash", [path.join(alias, "scripts", "build-static.sh"), path.join(alias, "tests")], { cwd: os.tmpdir(), timeout: 120000 })
+      .then(() => ({ failed: false }))
+      .catch(() => ({ failed: true }));
+    assert.equal(result.failed, true, "a symlinked invocation over tracked tests must fail");
+
+    const tracked = (await run("git", ["-C", copy, "ls-files", "tests"])).stdout.trim().split("\n").filter(Boolean);
+    const after = (await run("git", ["-C", copy, "ls-files", "tests"])).stdout.trim().split("\n").filter(Boolean);
+    assert.deepEqual(after, tracked, "tracked tests must survive the symlinked invocation");
+
+    const rootResult = await run("bash", [path.join(alias, "scripts", "build-static.sh"), path.join(alias, "README.md")], { cwd: os.tmpdir(), timeout: 120000 })
+      .then(() => ({ failed: false }))
+      .catch(() => ({ failed: true }));
+    assert.equal(rootResult.failed, true, "a symlinked invocation over a tracked root file must fail");
+  } finally {
+    await fs.rm(copy, { recursive: true, force: true });
+    await fs.rm(alias, { recursive: true, force: true });
+  }
+});

@@ -2,8 +2,10 @@
 set -euo pipefail
 
 # Build the complete deployable static site. No server executable is produced.
-declare -r script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-declare -r project_root="$(cd -- "${script_dir}/.." && pwd)"
+# The roots are canonicalized physically so an invocation through a symlinked
+# checkout shares the same path representation as the resolved output (F04).
+declare -r script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+declare -r project_root="$(cd -- "${script_dir}/.." && pwd -P)"
 declare -r output_dir="${1:-${project_root}/dist}"
 declare -r version="$(tr -d '[:space:]' < "${project_root}/VERSION")"
 
