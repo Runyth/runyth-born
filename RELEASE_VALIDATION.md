@@ -2,9 +2,14 @@
 
 ## Required checks
 
+The locked development dependencies (`npm ci`) must be installed before the
+gates: the Markdown fidelity regression requires its renderer and fails loudly
+when it is unavailable instead of silently reducing coverage.
+
 Run:
 
 ```bash
+npm ci
 make check
 ```
 
@@ -14,7 +19,7 @@ The gate verifies:
 - `go test -race ./...`;
 - `go vet ./...`;
 - JavaScript syntax;
-- Node.js unit tests for save revisions, conflict rejection, legacy migration, session/resume encoding, build-output guards, release-tag agreement, and Markdown fidelity;
+- Node.js unit tests for shared save authority across both storage copies, recovery visibility, fallback-only migration, deletion across migration boundaries, divergent-branch imports, queued save conflicts, session/resume encoding, build-output guards including symlinked checkouts, release-tag agreement, and Markdown fidelity;
 - a complete static build;
 - plain JavaScript reconciliation/rendering against every published template;
 - generated template catalog integrity;
@@ -31,17 +36,18 @@ npx playwright install chromium
 make browser-check
 ```
 
-Chromium checks root and project paths, local reload/resume, touch navigation, cleared answers, literal Markdown downloads, completion, portable import in a fresh browser context, localStorage fallback, missing sessions, and nested 404 recovery. It also covers stale-tab protection (navigation and divergent edits cannot overwrite newer acknowledged answers), revision-ordered imports under clock skew, legacy `template-wizard-web` session migration from both the legacy database and legacy fallback keys with originals kept, and the confirmed finish-dialog deletion of a local questionnaire. Runtime requests must be GETs for same-origin static files. CI runs these checks before changes can pass validation.
+Chromium checks root and project paths, local reload/resume, touch navigation, cleared answers, literal Markdown downloads, completion, portable import in a fresh browser context, localStorage fallback, missing sessions, and nested 404 recovery. It also covers stale-tab protection (navigation and divergent edits cannot overwrite newer acknowledged answers), cross-store authority (a stale primary write is rejected while a newer acknowledged fallback save exists), revision-ordered imports under clock skew with divergent branches preserved in every direction and reviewable through the import choice, serialized single-tab saves without false conflicts, legacy `template-wizard-web` session migration from both the legacy database and legacy fallback keys with originals kept, and deletion of migrated questionnaires that also removes the legacy copies so they cannot return. Runtime requests must be GETs for same-origin static files. CI runs these checks before changes can pass validation.
 
 ## Release packaging
 
 Run:
 
 ```bash
+npm ci
 make package
 ```
 
-Packaging refuses a workspace with uncommitted or untracked changes, scans every reachable Git object for representative credential and private-content patterns, and verifies the archives after creation (integrity, source inventory, runtime archive matching the built `dist/`, documentation inventory). The release workflow additionally refuses a tag that does not exactly match `v${VERSION}` or that does not resolve to the packaged commit.
+Packaging refuses a workspace with uncommitted or untracked changes, scans every reachable Git object, commit message, and annotated tag message for representative credential and private-content patterns with redacted diagnostics, and verifies the archives after creation: the source archive is extracted to confirm Git object integrity, a project inventory exactly matching the committed tree (ignored and untracked workspace files are never shipped), the packaged revision, credential-free Git configuration, and redacted privacy scanning; the runtime archive must match the built `dist/`, and the documentation inventory is checked. The release workflow additionally refuses a tag that does not exactly match `v${VERSION}` or that does not resolve to the packaged commit.
 
 Expected artifacts:
 

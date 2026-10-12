@@ -14,11 +14,11 @@ Autosave data stays in the browser:
 - `localStorage` is a compatibility fallback;
 - no answer is intentionally transmitted to the static host by application code.
 
-Saves are acknowledged only after the storage transaction commits, and every saved copy carries a monotonic revision. A copy with a lower revision than the stored record is rejected instead of silently overwriting newer answers, so a stale second tab cannot destroy newer work merely by navigating, and clock differences cannot make an older copy win.
+Saves are acknowledged only after the storage transaction commits, and every saved copy carries a monotonic revision. Authority is established across both storage copies: a copy with a lower revision than the newest acknowledged save anywhere is rejected instead of silently overwriting newer answers, so a stale second tab cannot destroy newer work merely by navigating, a recovered IndexedDB store cannot bury a newer acknowledged fallback save, and clock differences cannot make an older copy win.
 
-Preserved copies (answers that no longer match a template, divergent portable imports, rejected conflicting edits) are stored separately under a recovery record and stay available for review; the review dialog can copy or discard them.
+Preserved copies (answers that no longer match a template, divergent portable imports in any revision direction, rejected conflicting edits, and divergent storage copies) are stored separately under a recovery record and stay available for review; the review dialog can copy, discard, or — for imported copies — apply the preserved answers. The review copy is readable from both storage backends after a primary-store recovery.
 
-The finish dialog offers a confirmed **Delete local copy** action that removes the session, its navigation position, and the recovery record from this browser. There is no automatic retention limit or central backup; on shared browser profiles, users who need to remove questionnaire data should use the delete control or the browser's site-data clearing.
+The finish dialog offers a confirmed **Delete local copy** action that removes the session, its navigation position, the recovery record, and every copy left by the legacy migration from this browser, so a deleted questionnaire does not return on the next open. There is no automatic retention limit or central backup; on shared browser profiles, users who need to remove questionnaire data should use the delete control or the browser's site-data clearing.
 
 Browsers may terminate a page before a debounced autosave completes. The most recent acknowledged **Saved locally** status, portable snapshots, and downloaded files are the recovery checkpoints, not every keystroke.
 

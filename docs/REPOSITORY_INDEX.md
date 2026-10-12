@@ -27,8 +27,8 @@ imports are relative.
 |---|---|
 | `site/index.html`, `site/assets/home.js` | Catalog cards, new sessions, recent sessions |
 | `site/wizard.html`, `site/assets/wizard.js` | Questions, section navigation, progress, autosave scheduling, conflict handling, preserved-answer review, completion, downloads, delete control |
-| `site/assets/runtime.js` | Plain JavaScript reconciliation with match diagnostics, section counts, escaped answer insertion into compiled Markdown slots |
-| `site/assets/storage.js` | Session creation, cryptographic IDs, revision-guarded saves, navigation position store, recovery records, legacy-namespace migration, localStorage fallback, deletion |
+| `site/assets/runtime.js` | Plain JavaScript reconciliation with match diagnostics, section counts, literal-text escaping for answers and preserved copies |
+| `site/assets/storage.js` | Session creation, cryptographic IDs, cross-copy revision authority, navigation position store, recovery records, legacy-namespace migration, localStorage fallback, scoped deletion |
 | `site/assets/portable.js` | Bounded gzip/JSON resume snapshots with save revisions, URL-fragment encoding/import |
 | `site/assets/app.css` | Responsive layout and UI styling |
 | `site/404.html` | Deployment-aware recovery from missing URLs |
@@ -38,13 +38,13 @@ imports are relative.
 | `internal/staticapp/core.go` | Build-time template analysis and section metadata |
 | `internal/mdast/` | JSON/YAML loading, question discovery, IDs, merging, fingerprints |
 | `internal/markdown/` | Canonical mdast Markdown rendering with literal-text escaping |
-| `internal/yamlmini/` | Dependency-free JSON-compatible YAML subset with block scalar support |
+| `internal/yamlmini/` | Dependency-free JSON-compatible YAML subset with full block scalar semantics |
 | `scripts/check.sh` | Formatting, race tests, vet, JS tests/syntax, build and artifact smoke checks |
 | `scripts/build-static.sh` | Static build with tracked-source output protection |
 | `scripts/validate-static.py` | Artifact references, compiled slots, catalog parity, no server/Go/WASM assets |
-| `scripts/package-release.sh` | Provenance checks, history scan, three release ZIPs, archive verification, checksums |
+| `scripts/package-release.sh` | Provenance checks, history scan, three release ZIPs, archive verification with extracted-source checks, checksums |
 | `scripts/check-release-tag.sh` | Release tag/VERSION agreement guard |
-| `scripts/scan-source-history.sh` | Representative credential scan over reachable Git objects |
+| `scripts/scan-source-history.sh` | Redacted credential scan over reachable Git objects, commit and tag messages, and Git support files |
 | `tests/js/` | Storage, resume, reconciliation, build-guard, release-tag, and Markdown fidelity regressions plus artifact smoke tests |
 | `tests/browser/smoke.mjs` | Chromium acceptance of unchanged root/project artifacts, or the actual deployment via `LIVE_SITE_URL` |
 | `package.json`, `package-lock.json` | Pinned development-only browser testing and Markdown validation dependencies |

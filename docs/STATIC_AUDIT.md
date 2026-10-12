@@ -30,6 +30,15 @@ Deployment preparation continued on 2026-10-05.
 | The browser harness rewrote 404 base URLs and could hide a publication error | Build root and project artifacts independently, serve every file unchanged, and verify the exact 404 response and recovery URL. |
 | Stale tabs, template updates, and clock skew could silently replace or discard saved answers | Guard saves with monotonic revisions in a read-compare-update transaction, store navigation positions separately, order divergent copies by revision, and preserve unmatched or displaced answers in a reviewable recovery record. |
 | The rename to Runyth Born changed browser storage names | Migrate legacy `template-wizard-web` database and fallback sessions into the renamed stores on first open, keeping the legacy originals. |
+| Save authority checked only its destination store | Establish revision authority across both storage copies before writing; tie divergent pairs explicitly by loading the selected record and preserving the other. |
+| Fallback-acknowledged recovery records became invisible when the primary store recovered | Read recovery records from both copies and choose the newest acknowledged record. |
+| Invoking the build through a symlinked checkout bypassed the source guard | Canonicalize both project roots physically before all tracked-source comparisons. |
+| Fallback-only legacy sessions did not migrate, and divergent legacy copies selected the older answer | Migrate legacy fallback keys without IndexedDB and select the fresher legacy copy by the legacy wall-clock rule, keeping the unselected original. |
+| Deleting a migrated questionnaire returned through re-migration | Remove the legacy database and fallback copies with the session and report incomplete removal only when an IndexedDB copy may survive. |
+| Preserved-answer serialization emitted raw text and headings | Route protected answers and headings through the literal text serializer. |
+| Portable branches with lower local revisions were silently dropped | Preserve every divergent branch regardless of revision counter and offer review or import for imported copies. |
+| One tab falsely conflicted with its own serialized saves | Carry the acknowledged revision into queued snapshots at execution time. |
+| The renderer regression silently skipped in dependency-free gates | Install dependencies before the gates and fail loudly when the validator is unavailable. |
 
 ## Three verification layers
 

@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Establish save authority across both storage copies: a stale tab can no longer tie or bury a newer acknowledged fallback save after a primary-store recovery, tied divergent copies load with the other preserved for review, preserved recovery records stay visible from both stores, legacy fallback sessions migrate without IndexedDB with the fresher legacy copy selected, and deleting a migrated questionnaire also removes the legacy copies so it cannot return.
+- Preserve every divergent portable-import branch regardless of its save counter, with review plus an import choice for imported copies instead of silent rejection.
+- Avoid false save conflicts in a single tab: queued snapshots carry the acknowledged revision at execution time, and a rejected edit's preservation is awaited and surfaced.
+- Escape preserved-answer serialization with the same literal-text contract as ordinary exported Markdown, so entity strings, heading markers, and raw HTML cannot change meaning in recovery copies.
+- Complete block scalar semantics: keep-chomping, blank-only content, blank runs next to more-indented lines, first-line indentation detection, and explicit rejection of malformed headers.
+- Reject build output directories that overlap tracked source for symlinked checkouts as well, by canonicalizing both project roots physically.
+- Verify the published Source ZIP itself: packaging ships exactly the committed tree (ignored and untracked files excluded), drops local navigation metadata, scrubs credential URLs from the copied Git configuration, and validates the extracted archive's integrity, inventory, revision, and privacy with redacted scanning over Git objects, commit messages, tag messages, and Git support files.
+- Install locked development dependencies before the quality gates so the Markdown fidelity regression never silently skips.
 - Rename the project to Runyth Born (`runyth-born` for identifiers) across the Go module, npm checks package, browser storage database and fallback keys, release and workflow artifact names, site branding, and documentation; sessions saved under the previous storage names are migrated automatically on first open, with the legacy originals kept.
 - Guard acknowledged saves with monotonic revisions enforced through read-compare-update storage transactions: stale tabs can no longer overwrite newer answers by navigating, conflicting edits are rejected with a clear status and preserved recoverably, and navigation positions persist separately from answers.
 - Preserve unmatched saved answers during template reconciliation instead of discarding them; reconciliation now reports exact, fallback, and unmatched counts, and a notice with a review dialog offers copy and discard actions over the preserved copy.
