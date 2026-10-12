@@ -34,3 +34,47 @@ func TestCompileTemplateSlots(t *testing.T) {
 		}
 	}
 }
+
+// A complete valid mdast template may author multiline values with an
+// explicit indentation indicator and varying line depths; this compiles end
+// to end (F08).
+func TestCompileTemplateWithExplicitIndentationBlockScalar(t *testing.T) {
+	source := []byte(`type: root
+children:
+  - type: heading
+    depth: 1
+    children:
+      - type: text
+        value: Block Scalar Template
+  - type: paragraph
+    children:
+      - type: text
+        value: |2-
+          Brief answers are sufficient.
+            Explicit depths count too.
+  - type: list
+    ordered: false
+    spread: false
+    children:
+      - type: listItem
+        spread: false
+        checked: null
+        children:
+          - type: paragraph
+            children:
+              - type: strong
+                children:
+                  - type: text
+                    value: "Name:"
+`)
+	compiled, err := Compile(source, ".yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(compiled.Questions) == 0 {
+		t.Fatal("no questions")
+	}
+	if !strings.Contains(compiled.Parts[0].Text, "  Explicit depths count too\\.") {
+		t.Fatalf("explicit indentation content not preserved: %q", compiled.Parts[0].Text)
+	}
+}

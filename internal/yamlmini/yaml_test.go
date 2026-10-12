@@ -108,6 +108,84 @@ func TestBlockScalarHeaderAndFoldingSemantics(t *testing.T) {
 	}
 }
 
+func TestBlockScalarReferenceBehavior(t *testing.T) {
+	// Every case was cross-checked against PyYAML 6.0.2 and the YAML 1.2.2
+	// scalar rules (F08).
+	cases := []struct {
+		name   string
+		source string
+		want   string
+	}{
+		{"explicit indentation with varying depths", "value: |2-\n    first\n  second\n", "  first\nsecond"},
+		{"explicit indentation with more-deep content", "value: |2\n    a\n      b\n", "  a\n    b\n"},
+		{"explicit folded with blank unrelated run", "value: >2\n    a\n\n      b\n", "  a\n\n    b\n"},
+		{"unterminated final line under clip", "value: |\n  a", "a"},
+		{"unterminated two-line literal", "value: |\n  a\n  b", "a\nb"},
+		{"unterminated folded", "value: >\n  a\n  b", "a b"},
+		{"keep with final blank real", "value: |+\n  a\n\n", "a\n\n"},
+		{"keep with significant spaces line", "value: |+\n  a\n    \n", "a\n  \n"},
+		{"keep with bigger significant spaces", "value: |+\n  a\n      \n", "a\n    \n"},
+		{"clip keeps significant spaces", "value: |\n  a\n    \n", "a\n  \n"},
+		{"strip keeps significant spaces", "value: |-\n  a\n    \n", "a\n  "},
+		{"blank spaces inside literal", "value: |\n  a\n    \n  b\n", "a\n  \nb\n"},
+		{"folded keeps space line as literal", "value: >\n  a\n    \n  b\n", "a\n  \nb\n"},
+		{"folded strip no final newline", "value: >-\n  a", "a"},
+		{"keep without final newline", "value: |+\n  a", "a"},
+		{"blank-only clip", "value: |\n \n", ""},
+		{"blank-only keep", "value: |+\n \n\n", "\n\n"},
+		{"unterminated deep blank under keep", "value: |+\n  a\n  ", "a\n"},
+		{"unterminated deep content under keep", "value: |+\n  a\n    ", "a\n  "},
+		{"literal small blank below indent", "value: |+\n  a\n \n", "a\n\n"},
+		{"folded blank run under keep", "value: >+\n  a\n\n\n", "a\n\n\n"},
+		{"literal blank run under keep", "value: |+\n  a\n\n\n", "a\n\n\n"},
+		{"folded MI blank MI", "value: >-\n  a\n    b\n\n    c\n", "a\n  b\n\n  c"},
+		{"literal tab inside content", "value: |\n  a\n  \tb\n", "a\n\tb\n"},
+		{"leading blanks contribute", "value: >-\n\n  a\n", "\na"},
+	}
+
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			parsed, err := Parse([]byte(testCase.source))
+			if err != nil {
+				t.Fatalf("Parse() error = %v", err)
+			}
+			mapping, ok := parsed.(map[string]any)
+			if !ok {
+				t.Fatalf("root type = %T, want map[string]any", parsed)
+			}
+			if mapping["value"] != testCase.want {
+				t.Fatalf("value = %q, want %q", mapping["value"], testCase.want)
+			}
+		})
+	}
+}
+
+func TestRejectedBlockScalarsMatchReference(t *testing.T) {
+	// Invalid headers and structural tabs are rejected outright instead of
+	// being accepted with altered content; validated against PyYAML (F08).
+	sources := []string{
+		"value: |2\u0662\n  a\n",
+		"value: |\t\n  a\n",
+		"value: |2\t# note\n  a\n",
+		"value: ||\n",
+		"value: >>\n  a\n  b\n",
+		"value: |x\n  a\n",
+		"value: |2x-3\n  a\n",
+		"value: |0\n",
+		"a: 1\n\t \n",
+		"a: \t1\n",
+		"a: x\ty\n",
+		"a: 'x'\tb\n",
+		"- \t a\n",
+		"a:\n  b: 1\t2\n",
+	}
+	for _, source := range sources {
+		if _, err := Parse([]byte(source)); err == nil {
+			t.Fatalf("accepted invalid input %q", source)
+		}
+	}
+}
+
 func TestPlainScalarWithApostropheKeepsCommentHandling(t *testing.T) {
 	parsed, err := Parse([]byte("value: don't know # note\n"))
 	if err != nil {

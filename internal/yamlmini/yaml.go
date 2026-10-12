@@ -17,7 +17,10 @@ func Parse(data []byte) (any, error) {
 	normalized := strings.ReplaceAll(string(data), "\r\n", "\n")
 	normalized = strings.ReplaceAll(normalized, "\r", "\n")
 
-	parser := &parser{lines: strings.Split(normalized, "\n")}
+	parser := &parser{
+		lines:              strings.Split(normalized, "\n"),
+		documentTerminated: strings.HasSuffix(normalized, "\n"),
+	}
 	parser.skipIgnorable()
 	if parser.index >= len(parser.lines) {
 		return nil, fmt.Errorf("YAML input is empty")
@@ -44,6 +47,10 @@ func Parse(data []byte) (any, error) {
 type parser struct {
 	lines []string
 	index int
+	// documentTerminated records whether the normalized input ended with a
+	// line break, which makes the final split element the artifact of that
+	// break rather than real content (F08).
+	documentTerminated bool
 }
 
 func (p *parser) parseBlock(indent int) (any, error) {
@@ -90,12 +97,16 @@ func (p *parser) parseSequence(indent int) ([]any, error) {
 			return nil, p.errorAt(p.index, fmt.Sprintf("unexpected indentation %d inside sequence at indentation %d", lineIndent, indent))
 		}
 
+		if forbiddenTab(p.lines[p.index]) {
+			return nil, p.errorAt(p.index, "tabs are not supported outside quoted scalars")
+		}
+
 		content := strings.TrimSpace(p.lines[p.index])
 		if !isSequenceLine(content) {
 			break
 		}
 
-		rest := strings.TrimSpace(strings.TrimPrefix(content, "-"))
+		rest := strings.TrimLeft(strings.TrimPrefix(p.lines[p.index][indent:], "-"), " \t")
 		p.index++
 
 		if rest == "" {
@@ -180,12 +191,15 @@ func (p *parser) parseMapping(indent int, initial map[string]any) (map[string]an
 			return nil, p.errorAt(p.index, fmt.Sprintf("unexpected indentation %d inside mapping at indentation %d", lineIndent, indent))
 		}
 
-		content := strings.TrimSpace(p.lines[p.index])
-		if isSequenceLine(content) {
+		kept := p.lines[p.index]
+		if forbiddenTab(kept) {
+			return nil, p.errorAt(p.index, "tabs are not supported outside quoted scalars")
+		}
+		if isSequenceLine(strings.TrimSpace(kept)) {
 			break
 		}
 
-		key, rawValue, ok := splitMappingEntry(content)
+		key, rawValue, ok := splitMappingEntry(kept)
 		if !ok {
 			return nil, p.errorAt(p.index, "expected a YAML mapping entry")
 		}
@@ -209,8 +223,13 @@ func (p *parser) assignMappingValue(target map[string]any, key string, rawValue 
 	if key == "<<" {
 		return p.errorAt(max(0, p.index-1), "YAML merge keys are not supported")
 	}
-	rawValue = strings.TrimSpace(rawValue)
+	// Leading whitespace is trimmed, but the trailing side keeps its
+	// characters: a trailing tab after a block scalar header must reach the
+	// header validation (F08).
+	rawValue = strings.TrimLeft(rawValue, " \t")
 
+	// The unscaled header detection runs on the left-trimmed value; a comment
+	// without a separating space is not a header.
 	if looksLikeBlockScalarHeader(rawValue) {
 		value, err := p.parseBlockScalarHeaderAndValue(parentIndent, rawValue)
 		if err != nil {
@@ -219,6 +238,8 @@ func (p *parser) assignMappingValue(target map[string]any, key string, rawValue 
 		target[key] = value
 		return nil
 	}
+
+	rawValue = strings.TrimSpace(rawValue)
 
 	if rawValue != "" {
 		scalar, err := parseScalar(rawValue)
@@ -250,7 +271,12 @@ func (p *parser) assignMappingValue(target map[string]any, key string, rawValue 
 }
 
 func (p *parser) parseBlockScalarHeaderAndValue(parentIndent int, rawValue string) (string, error) {
-	header, rest := splitHeaderToken(rawValue)
+	header, rest, separatedByTab := splitHeaderToken(rawValue)
+	if separatedByTab {
+		// The reference scanner allows only a space or a line break after the
+		// header token and its indicators; a tab there is invalid (F08).
+		return "", p.errorAt(max(0, p.index-1), fmt.Sprintf("invalid block scalar header %q", rawValue))
+	}
 	if rest != "" && !strings.HasPrefix(rest, "#") {
 		return "", p.errorAt(max(0, p.index-1), fmt.Sprintf("unsupported block scalar header %q", rawValue))
 	}
@@ -262,35 +288,47 @@ func (p *parser) parseBlockScalarHeaderAndValue(parentIndent int, rawValue strin
 }
 
 // splitHeaderToken splits the leading [|>] header token from a trailing
-// comment. A comment must be separated from the token by whitespace.
-func splitHeaderToken(rawValue string) (string, string) {
-	value := strings.TrimSpace(rawValue)
+// comment. A comment must be separated from the token by whitespace; the
+// separator is reported so a tab can be rejected (F08).
+func splitHeaderToken(rawValue string) (string, string, bool) {
+	value := rawValue
 	tokenEnd := len(value)
+	separatorTab := false
 	for index, character := range value {
 		if character == ' ' || character == '\t' {
 			tokenEnd = index
+			separatorTab = character == '\t'
 			break
 		}
 	}
 	token := value[:tokenEnd]
 	rest := strings.TrimSpace(value[tokenEnd:])
-	return token, rest
+	return token, rest, separatorTab
 }
 
 // parseHeaderIndicators validates the optional chomping and indentation
-// indicators, in either order, exactly once each.
+// indicators, in either order, exactly once each. Indentation indicators are
+// restricted to the ASCII digits 1–9 the specification defines; Unicode digit
+// letters are rejected instead of accepted with altered content (F08).
 func parseHeaderIndicators(header string) (byte, int, error) {
 	chomp := byte(0)
 	explicitIndent := 0
 	sawIndentIndicator := false
-	for _, character := range []rune(header[1:]) {
+	skippedStyle := false
+	for _, character := range header {
+		if !skippedStyle {
+			// The first character is the style indicator itself; every other
+			// character must be an indicator, in either order, once (F08).
+			skippedStyle = true
+			continue
+		}
 		switch {
 		case character == '-' || character == '+':
 			if chomp != 0 {
 				return 0, 0, fmt.Errorf("duplicate chomping indicator in block scalar header %q", header)
 			}
 			chomp = byte(character)
-		case unicode.IsDigit(character):
+		case character >= '1' && character <= '9':
 			if sawIndentIndicator {
 				return 0, 0, fmt.Errorf("duplicate indentation indicator in block scalar header %q", header)
 			}
@@ -314,147 +352,162 @@ func looksLikeBlockScalarHeader(value string) bool {
 	return trimmed != "" && (trimmed[0] == '|' || trimmed[0] == '>')
 }
 
+// parseBlockScalar scans a literal or folded block scalar with the exact
+// semantics of the YAML 1.2 block-scalar specification as implemented by
+// PyYAML (F08): indentation detection from the deepest leading blank line and
+// the first content line (or the explicit indicator), blank lines below the
+// scan depth contribute their line breaks while residual spaces beyond the
+// indentation are content, folding keeps breaks literal around more-indented
+// lines and a non-blank neighbor with no blank in between folds to a space,
+// and chomping keeps the actual stored records of which content lines were
+// terminated by a line break — an unterminated final line stores no trailing
+// break for clip or keep.
 func (p *parser) parseBlockScalar(parentIndent int, style byte, chomp byte, explicitIndent int) (string, error) {
-	// Content must be more indented than the parent node; an explicit
-	// indentation indicator moves the requirement exactly that far.
-	bound := parentIndent + 1
-	if explicitIndent > 0 {
-		bound = parentIndent + explicitIndent
+	minIndent := parentIndent + 1
+	if minIndent < 1 {
+		minIndent = 1
 	}
 
-	start := p.index
-	baseIndent := 0
-	sawContentLine := false
-	end := start
-	for end < len(p.lines) {
-		raw := p.lines[end]
-		if strings.TrimSpace(raw) == "" {
-			if end == len(p.lines)-1 {
-				// The final empty element is the document's terminating
-				// newline, not a blank content line (F08).
+	indent := 0
+	if explicitIndent > 0 {
+		// The explicit indicator fixes the scan depth for the whole block.
+		indent = minIndent + explicitIndent - 1
+	} else {
+		// Auto-detection: deepest column reached while skipping the leading
+		// blank lines and the first content line's own indentation.
+		maxSpaces := 0
+		for scan := p.index; scan < len(p.lines); {
+			line := p.lines[scan]
+			if p.isFinalArtifactLine(scan) {
 				break
 			}
-			end++
-			continue
+			spaces := spacePrefixLength(line)
+			if spaces > maxSpaces {
+				maxSpaces = spaces
+			}
+			if spaces < len(line) {
+				break
+			}
+			scan++
 		}
-		lineIndent, err := indentation(raw)
-		if err != nil {
-			return "", p.errorAt(end, err.Error())
-		}
-		if lineIndent < bound {
-			break
-		}
-		if !sawContentLine {
-			baseIndent = lineIndent
-			sawContentLine = true
-		} else if lineIndent < baseIndent {
-			// A content line shallower than the first content line ends the
-			// block; the surrounding mapping then reports the misplaced line.
-			break
-		}
-		end++
-	}
-	if explicitIndent > 0 {
-		baseIndent = bound
+		indent = max(minIndent, maxSpaces)
 	}
 
-	contentLines := make([]string, 0, end-start)
-	for i := start; i < end; i++ {
-		raw := p.lines[i]
-		if strings.TrimSpace(raw) == "" {
-			contentLines = append(contentLines, "")
-			continue
+	artifact := func(index int) bool { return p.isFinalArtifactLine(index) }
+	start := p.index
+	cursor := start
+	// breaks holds the line breaks of the blank lines scanned since the last
+	// content line (initially the block's leading blank lines).
+	breaks := ""
+	for cursor < len(p.lines) {
+		line := p.lines[cursor]
+		if artifact(cursor) {
+			break
 		}
-		if len(raw) < baseIndent {
-			return "", p.errorAt(i, "invalid block scalar indentation")
+		spaces := spacePrefixLength(line)
+		if spaces > indent && explicitIndent > 0 {
+			// Spaces beyond a fixed scan depth are real content, not a blank
+			// line (F08, significant spaces).
+			break
 		}
-		contentLines = append(contentLines, raw[baseIndent:])
+		if spaces < len(line) {
+			break
+		}
+		if cursor+1 < len(p.lines) {
+			breaks += "\n"
+		}
+		cursor++
 	}
-	p.index = end
+	p.index = cursor
 
+	var out strings.Builder
 	sawContent := false
-	for _, line := range contentLines {
-		if line != "" {
-			sawContent = true
+	previousLeadSpace := false
+	previousBreak := ""
+
+	for cursor < len(p.lines) {
+		line := p.lines[cursor]
+		if artifact(cursor) {
 			break
 		}
-	}
+		spaces := spacePrefixLength(line)
+		terminated := cursor+1 < len(p.lines)
+		if spaces < indent {
+			if spaces < len(line) {
+				// A shallow line with real content ends the block; the
+				// surrounding mapping reports the misplaced line.
+				break
+			}
+			// A shallow all-space line is blank: it contributes its break when
+			// it is terminated and nothing at an unterminated end of input.
+			if terminated {
+				breaks += "\n"
+			}
+			cursor++
+			continue
+		}
+		residual := line[indent:]
+		if residual == "" {
+			if terminated {
+				breaks += "\n"
+			}
+			cursor++
+			continue
+		}
 
-	// Literal content keeps every line including its own terminating newline,
-	// so keep-chomping preserves real trailing blank lines without adding any
-	// that no longer exist (F08).
-	var value string
-	if style == '>' {
-		value = foldLines(contentLines)
+		// Fold the break of the previous content line if both neighbors are
+		// non-blank and not more-indented and no blank line intervened.
 		if sawContent {
-			value += "\n"
+			foldable := style == '>' && previousBreak == "\n" &&
+				!previousLeadSpace && residual[0] != ' ' && residual[0] != '\t'
+			switch {
+			case foldable && breaks == "":
+				out.WriteByte(' ')
+			case foldable:
+			default:
+				out.WriteString(previousBreak)
+			}
 		}
-	} else {
-		var builder strings.Builder
-		for _, line := range contentLines {
-			builder.WriteString(line)
-			builder.WriteByte('\n')
+		out.WriteString(breaks)
+		breaks = ""
+		out.WriteString(residual)
+		sawContent = true
+		previousLeadSpace = residual[0] == ' ' || residual[0] == '\t'
+		previousBreak = ""
+		if terminated {
+			previousBreak = "\n"
 		}
-		value = builder.String()
+		cursor++
 	}
+	p.index = cursor
 
-	switch chomp {
-	case '-':
-		value = strings.TrimRight(value, "\n")
-	case '+':
-		// Keep the trailing breaks exactly as the source wrote them.
-	default:
-		if sawContent {
-			value = strings.TrimRight(value, "\n") + "\n"
-		} else {
-			value = ""
-		}
+	// Chomping uses the physically observed line breaks: clip repeats the last
+	// content line's break once (if it had one), keep replays the trailing
+	// blank-line breaks too, and strip drops both (F08).
+	if chomp != '-' {
+		out.WriteString(previousBreak)
 	}
-
-	return value, nil
+	if chomp == '+' {
+		out.WriteString(breaks)
+	}
+	return out.String(), nil
 }
 
-// foldLines applies the folded block scalar rules to base-indent-stripped
-// lines: a single line break between two non-blank, non-more-indented lines
-// folds to a space, blank lines keep their breaks literally, and more-indented
-// lines are never folded (F08).
-func foldLines(lines []string) string {
-	var builder strings.Builder
-	pendingBlanks := 0
-	first := true
-	previousMoreIndented := false
-	for _, line := range lines {
-		if line == "" {
-			pendingBlanks++
-			continue
-		}
-		moreIndented := strings.HasPrefix(line, " ") || strings.HasPrefix(line, "\t")
-		if !first {
-			switch {
-			case pendingBlanks > 0:
-				if previousMoreIndented || moreIndented {
-					// Breaks around a more-indented line are never folded, so
-					// each blank line keeps its own break plus the break that
-					// ends the run's previous line (F08).
-					builder.WriteString(strings.Repeat("\n", pendingBlanks+1))
-				} else {
-					builder.WriteString(strings.Repeat("\n", pendingBlanks))
-				}
-			case previousMoreIndented || moreIndented:
-				builder.WriteByte('\n')
-			default:
-				builder.WriteByte(' ')
-			}
-		} else if pendingBlanks > 0 {
-			builder.WriteString(strings.Repeat("\n", pendingBlanks))
-		}
-		builder.WriteString(line)
-		pendingBlanks = 0
-		previousMoreIndented = moreIndented
-		first = false
+// spacePrefixLength counts the leading spaces of a line. Tabs stop the scan
+// and are treated as content, matching the reference scanner.
+func spacePrefixLength(line string) int {
+	count := 0
+	for count < len(line) && line[count] == ' ' {
+		count++
 	}
-	builder.WriteString(strings.Repeat("\n", pendingBlanks))
-	return builder.String()
+	return count
+}
+
+func (p *parser) isFinalArtifactLine(index int) bool {
+	// The last split element is the artifact of the document's terminating
+	// newline rather than a real line only when the input ended with a break;
+	// otherwise it is physical content (F08).
+	return p.documentTerminated && index == len(p.lines)-1
 }
 
 func parseScalar(raw string) (any, error) {
@@ -560,7 +613,11 @@ func splitMappingEntry(line string) (string, string, bool) {
 				if err != nil {
 					return "", "", false
 				}
-				return key, strings.TrimSpace(remainder), true
+				// Only the leading whitespace is trimmed: a trailing tab after
+				// the value is invalid where the block scalar header expects a
+				// comment or line break, and must stay visible to the header
+				// parser (F08).
+				return key, strings.TrimLeft(remainder, " \t"), true
 			}
 		}
 	}
@@ -659,13 +716,76 @@ func (p *parser) nextContentIndent() (int, bool, error) {
 
 func (p *parser) skipIgnorable() {
 	for p.index < len(p.lines) {
-		trimmed := strings.TrimSpace(p.lines[p.index])
+		line := p.lines[p.index]
+		if forbiddenTab(line) {
+			// A tab outside a quoted scalar or comment cannot begin a token;
+			// stop so the caller's structural check rejects the document (F08).
+			break
+		}
+		trimmed := strings.TrimSpace(line)
 		if trimmed == "" || strings.HasPrefix(trimmed, "#") || trimmed == "---" || trimmed == "..." {
 			p.index++
 			continue
 		}
 		break
 	}
+}
+
+// forbiddenTab reports whether a structural line contains a tab outside a
+// quoted scalar or a comment. The reference scanner rejects tabs in every
+// other whitespace position, so block scalar content lines are handled by
+// their own scanner and never see this check (F08).
+func forbiddenTab(line string) bool {
+	quote := byte(0)
+	escaped := false
+	precedingSpace := true
+	for index := 0; index < len(line); index++ {
+		character := line[index]
+		if quote == '"' {
+			if escaped {
+				escaped = false
+				continue
+			}
+			if character == '\\' {
+				escaped = true
+				continue
+			}
+			if character == '"' {
+				quote = 0
+			}
+			continue
+		}
+		if quote == '\'' {
+			if character == '\'' {
+				if index+1 < len(line) && line[index+1] == '\'' {
+					index++
+					continue
+				}
+				quote = 0
+			}
+			continue
+		}
+		switch character {
+		case '\t':
+			return true
+		case ' ':
+			precedingSpace = true
+		case '#':
+			if precedingSpace {
+				// The rest of the line is a comment; its characters are free.
+				return false
+			}
+			precedingSpace = false
+		case '"', '\'':
+			if precedingSpace {
+				quote = character
+			}
+			precedingSpace = false
+		default:
+			precedingSpace = false
+		}
+	}
+	return false
 }
 
 func (p *parser) errorAt(index int, message string) error {
