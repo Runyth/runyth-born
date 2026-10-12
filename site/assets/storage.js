@@ -1,9 +1,18 @@
 "use strict";
 
 const DATABASE_NAME = "runyth-born";
-const DATABASE_VERSION = 2;
+const DATABASE_VERSION = 3;
 const STORE_NAME = "sessions";
+const POSITION_STORE_NAME = "positions";
+const RECOVERY_STORE_NAME = "recoveries";
 const FALLBACK_PREFIX = "runyth-born.session.v2.";
+
+export class StorageConflictError extends Error {
+  constructor() {
+    super("A newer version of this questionnaire was saved elsewhere");
+    this.name = "StorageConflictError";
+  }
+}
 
 let databasePromise;
 
@@ -16,8 +25,10 @@ function openDatabase() {
       const request = indexedDB.open(DATABASE_NAME, DATABASE_VERSION);
       request.onupgradeneeded = () => {
         const database = request.result;
-        if (!database.objectStoreNames.contains(STORE_NAME)) {
-          database.createObjectStore(STORE_NAME, { keyPath: "id" });
+        for (const storeName of [STORE_NAME, POSITION_STORE_NAME, RECOVERY_STORE_NAME]) {
+          if (!database.objectStoreNames.contains(storeName)) {
+            database.createObjectStore(storeName, { keyPath: "id" });
+          }
         }
       };
       request.onsuccess = () => resolve(request.result);
@@ -28,24 +39,329 @@ function openDatabase() {
   return databasePromise;
 }
 
-async function withStore(mode, callback) {
-  const database = await openDatabase();
-  return new Promise((resolve, reject) => {
-    const transaction = database.transaction(STORE_NAME, mode);
-    const store = transaction.objectStore(STORE_NAME);
-    let request;
+// Runs one transaction and resolves with the value that `operate` records in
+// `state.result` (immediately for plain writes, or from request callbacks for
+// read-modify-write work). Commit failures and aborts reject; a manual abort
+// from `operate` rejects with the recorded conflict instead of a storage error.
+function runTransaction(storeNames, mode, operate) {
+  return openDatabase().then((database) => new Promise((resolve, reject) => {
+    const names = Array.isArray(storeNames) ? storeNames : [storeNames];
+    const transaction = database.transaction(names, mode);
+    const stores = names.map((name) => transaction.objectStore(name));
+    const singleStore = stores.length === 1 ? stores[0] : stores;
+    const state = {};
+    transaction.oncomplete = () => resolve(state.result);
+    transaction.onabort = () => {
+      reject(state.conflict ? new StorageConflictError()
+        : transaction.error || state.error || new Error("Browser storage transaction was aborted"));
+    };
     try {
-      request = callback(store);
+      state.result = operate(singleStore, transaction, state);
     } catch (error) {
       reject(error);
-      return;
     }
-    // A successful put request can still be followed by a transaction abort
-    // (for example quota exhaustion). Confirm the commit before claiming save.
-    transaction.oncomplete = () => resolve(request.result);
-    request.onerror = () => reject(request.error || new Error("Browser storage operation failed"));
-    transaction.onabort = () => reject(transaction.error || new Error("Browser storage transaction was aborted"));
+  }));
+}
+
+function putRecord(storeName, record) {
+  return runTransaction(storeName, "readwrite", (store, transaction, state) => {
+    store.put(record);
+    state.result = record;
+    return state.result;
   });
+}
+
+function getRecord(storeName, id) {
+  return runTransaction(storeName, "readonly", (store, transaction, state) => {
+    const request = store.get(id);
+    request.onsuccess = () => { state.result = request.result; };
+    return state.result;
+  });
+}
+
+function getAllRecords(storeName) {
+  return runTransaction(storeName, "readonly", (store, transaction, state) => {
+    const request = store.getAll();
+    request.onsuccess = () => { state.result = request.result || []; };
+    return state.result;
+  });
+}
+
+export function normalizeRevision(value) {
+  const revision = Number(value);
+  return Number.isSafeInteger(revision) && revision > 0 ? revision : 0;
+}
+
+function pickNewer(left, right) {
+  if (!left) { return right; }
+  if (!right) { return left; }
+  return normalizeRevision(right.revision) > normalizeRevision(left.revision) ? right : left;
+}
+
+export function createSession(template, playerName = "") {
+  const now = new Date().toISOString();
+  return {
+    version: 2,
+    id: randomToken(),
+    template_id: template.id,
+    template_filename: template.filename,
+    template_fingerprint: template.fingerprint,
+    template_name: template.name,
+    player_name: String(playerName).trim().replace(/\s+/gu, " ").slice(0, 100),
+    created_at: now,
+    updated_at: now,
+    current_question: 0,
+    completed: false,
+    revision: 0,
+    questions: [],
+  };
+}
+
+// Saves are acknowledged only after a transaction commit, and every saved copy
+// carries a monotonic revision. A stored record with a higher revision than the
+// incoming copy means another tab or device acknowledged a newer save; the
+// incoming copy must never silently replace it. Wall-clock timestamps are
+// display metadata only and never decide which copy is authoritative (F03).
+export async function saveSession(session, { touch = true } = {}) {
+  if (!session?.id) {
+    throw new Error("Cannot save a session without an identifier");
+  }
+  const copy = structuredClone(session);
+  copy.revision = normalizeRevision(copy.revision);
+  if (touch) {
+    copy.updated_at = new Date().toISOString();
+    session.updated_at = copy.updated_at;
+  }
+
+  try {
+    const saved = await saveSessionRecord(copy);
+    session.revision = saved.revision;
+    return saved;
+  } catch (error) {
+    if (error instanceof StorageConflictError) {
+      throw error;
+    }
+    try {
+      const saved = fallbackSaveRecord(copy);
+      session.revision = saved.revision;
+      return saved;
+    } catch (fallbackError) {
+      if (fallbackError instanceof StorageConflictError) {
+        throw fallbackError;
+      }
+      throw new Error(`Could not save locally: ${fallbackError.message || error.message}`);
+    }
+  }
+}
+
+// Reads and updates the stored record inside one transaction so a concurrent
+// save cannot slip between the comparison and the write (F01).
+function saveSessionRecord(copy) {
+  return runTransaction(STORE_NAME, "readwrite", (store, transaction, state) => {
+    const request = store.get(copy.id);
+    request.onsuccess = () => {
+      const storedRevision = normalizeRevision(request.result?.revision);
+      if (storedRevision > copy.revision) {
+        state.conflict = true;
+        try { transaction.abort(); } catch { /* aborting after another failure is harmless */ }
+        return;
+      }
+      copy.revision = Math.max(storedRevision, copy.revision) + 1;
+      state.result = copy;
+      store.put(copy);
+    };
+    return state.result;
+  });
+}
+
+function fallbackSaveRecord(copy) {
+  const storedRevision = normalizeRevision(fallbackLoad(copy.id)?.revision);
+  if (storedRevision > copy.revision) {
+    throw new StorageConflictError();
+  }
+  copy.revision = Math.max(storedRevision, copy.revision) + 1;
+  fallbackSave(copy);
+  return copy;
+}
+
+export async function loadSession(id) {
+  if (!id) {
+    return null;
+  }
+
+  let indexedSession = null;
+  let fallbackSession = null;
+  try {
+    indexedSession = await getRecord(STORE_NAME, id);
+  } catch {
+    indexedSession = null;
+  }
+  try {
+    fallbackSession = fallbackLoad(id);
+  } catch {
+    fallbackSession = null;
+  }
+
+  const selected = pickNewer(indexedSession, fallbackSession);
+  if (!selected) {
+    return null;
+  }
+
+  // The most recently navigated position is persisted separately from the
+  // answers so a stale tab navigating cannot rewrite saved answers (F01).
+  try {
+    const position = await loadSessionPosition(id);
+    if (position && Number.isSafeInteger(position.position) && position.position >= 0) {
+      selected.current_question = position.position;
+    }
+  } catch {
+    // Keep the position stored inside the session record.
+  }
+  return selected;
+}
+
+// Navigation positions are cheap UI state and are stored independently, with
+// their own timestamps for choosing between the IndexedDB record and the
+// fallback mirror.
+export async function saveSessionPosition(id, position) {
+  const record = {
+    id,
+    position: Math.max(0, Math.floor(Number(position) || 0)),
+    updated_at: new Date().toISOString(),
+  };
+  try {
+    await putRecord(POSITION_STORE_NAME, record);
+  } catch (indexedDBError) {
+    try {
+      localStorage.setItem(`${FALLBACK_PREFIX}${id}.position`, JSON.stringify(record));
+    } catch (fallbackError) {
+      throw new Error(`Could not save the position locally: ${fallbackError.message || indexedDBError.message}`);
+    }
+  }
+  return record;
+}
+
+export async function loadSessionPosition(id) {
+  let indexedPosition = null;
+  let fallbackPosition = null;
+  try {
+    indexedPosition = await getRecord(POSITION_STORE_NAME, id);
+  } catch {
+    indexedPosition = null;
+  }
+  try {
+    const raw = localStorage.getItem(`${FALLBACK_PREFIX}${id}.position`);
+    fallbackPosition = raw ? JSON.parse(raw) : null;
+  } catch {
+    fallbackPosition = null;
+  }
+  if (!indexedPosition) { return fallbackPosition; }
+  if (!fallbackPosition) { return indexedPosition; }
+  return String(fallbackPosition.updated_at || "").localeCompare(String(indexedPosition.updated_at || "")) > 0
+    ? fallbackPosition : indexedPosition;
+}
+
+// Preserved answer copies (unmatched after reconciliation, divergent portable
+// imports, rejected conflicting edits) are recoverable instead of lost.
+export async function saveRecovery(id, recovery) {
+  const record = { ...recovery, id, saved_at: new Date().toISOString() };
+  try {
+    await putRecord(RECOVERY_STORE_NAME, record);
+  } catch (indexedDBError) {
+    try {
+      localStorage.setItem(`${FALLBACK_PREFIX}${id}.recovery`, JSON.stringify(record));
+    } catch (fallbackError) {
+      throw new Error(`Could not preserve the answers locally: ${fallbackError.message || indexedDBError.message}`);
+    }
+  }
+  return record;
+}
+
+export async function loadRecovery(id) {
+  try {
+    return await getRecord(RECOVERY_STORE_NAME, id);
+  } catch {
+    try {
+      const raw = localStorage.getItem(`${FALLBACK_PREFIX}${id}.recovery`);
+      return raw ? JSON.parse(raw) : null;
+    } catch {
+      return null;
+    }
+  }
+}
+
+export async function deleteRecovery(id) {
+  try {
+    await runTransaction(RECOVERY_STORE_NAME, "readwrite", (store, transaction, state) => {
+      store.delete(id);
+      state.result = null;
+      return state.result;
+    });
+  } catch { /* The preserved copy may only exist in the fallback store. */ }
+  try {
+    localStorage.removeItem(`${FALLBACK_PREFIX}${id}.recovery`);
+  } catch { /* Fallback storage is unavailable; nothing to remove. */ }
+}
+
+// Removes every stored copy of a questionnaire: the session, its navigation
+// position, and any preserved recovery record (including fallback mirrors).
+export async function deleteSession(id) {
+  if (!id) {
+    throw new Error("A session identifier is required");
+  }
+  const fallbackKeys = ["", ".position", ".recovery"];
+  try {
+    await runTransaction([STORE_NAME, POSITION_STORE_NAME, RECOVERY_STORE_NAME], "readwrite", (stores, transaction, state) => {
+      const [sessions, positions, recoveries] = stores;
+      sessions.delete(id);
+      positions.delete(id);
+      recoveries.delete(id);
+      state.result = null;
+      return state.result;
+    });
+  } catch {
+    try {
+      for (const suffix of fallbackKeys) {
+        localStorage.removeItem(`${FALLBACK_PREFIX}${id}${suffix}`);
+      }
+    } catch { /* Fallback storage is unavailable. */ }
+    throw new Error("Could not delete the stored questionnaire");
+  }
+  for (const suffix of fallbackKeys) {
+    try {
+      localStorage.removeItem(`${FALLBACK_PREFIX}${id}${suffix}`);
+    } catch { /* Fallback storage is unavailable. */ }
+  }
+}
+
+export async function listRecentSessions(limit = 8) {
+  let indexedSessions = [];
+  let fallbackSessions = [];
+  try {
+    indexedSessions = await getAllRecords(STORE_NAME);
+  } catch {
+    indexedSessions = [];
+  }
+  try {
+    fallbackSessions = fallbackList();
+  } catch {
+    fallbackSessions = [];
+  }
+
+  const byID = new Map();
+  for (const candidate of [...indexedSessions, ...fallbackSessions]) {
+    if (!candidate?.id || !candidate?.template_name) {
+      continue;
+    }
+    const existing = byID.get(candidate.id);
+    if (!existing || normalizeRevision(candidate.revision) > normalizeRevision(existing.revision)) {
+      byID.set(candidate.id, candidate);
+    }
+  }
+
+  return [...byID.values()]
+    .sort((left, right) => String(right.updated_at).localeCompare(String(left.updated_at)))
+    .slice(0, limit);
 }
 
 function fallbackSave(session) {
@@ -61,7 +377,7 @@ function fallbackList() {
   const sessions = [];
   for (let index = 0; index < localStorage.length; index += 1) {
     const key = localStorage.key(index);
-    if (!key?.startsWith(FALLBACK_PREFIX)) {
+    if (!key?.startsWith(FALLBACK_PREFIX) || key.endsWith(".position") || key.endsWith(".recovery")) {
       continue;
     }
     try {
@@ -84,101 +400,4 @@ export function randomToken(bytes = 32) {
     binary += String.fromCharCode(value);
   }
   return btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/u, "");
-}
-
-export function createSession(template, playerName = "") {
-  const now = new Date().toISOString();
-  return {
-    version: 2,
-    id: randomToken(),
-    template_id: template.id,
-    template_filename: template.filename,
-    template_fingerprint: template.fingerprint,
-    template_name: template.name,
-    player_name: String(playerName).trim().replace(/\s+/gu, " ").slice(0, 100),
-    created_at: now,
-    updated_at: now,
-    current_question: 0,
-    completed: false,
-    questions: [],
-  };
-}
-
-export async function saveSession(session, { touch = true } = {}) {
-  const copy = structuredClone(session);
-  if (touch) {
-    copy.updated_at = new Date().toISOString();
-    session.updated_at = copy.updated_at;
-  }
-
-  try {
-    await withStore("readwrite", (store) => store.put(copy));
-  } catch (indexedDBError) {
-    try {
-      fallbackSave(copy);
-    } catch (fallbackError) {
-      throw new Error(`Could not save locally: ${fallbackError.message || indexedDBError.message}`);
-    }
-  }
-  return copy;
-}
-
-export async function loadSession(id) {
-  if (!id) {
-    return null;
-  }
-
-  let indexedSession = null;
-  let fallbackSession = null;
-  try {
-    indexedSession = await withStore("readonly", (store) => store.get(id));
-  } catch {
-    indexedSession = null;
-  }
-  try {
-    fallbackSession = fallbackLoad(id);
-  } catch {
-    fallbackSession = null;
-  }
-
-  if (!indexedSession) {
-    return fallbackSession;
-  }
-  if (!fallbackSession) {
-    return indexedSession;
-  }
-
-  const indexedTime = Date.parse(indexedSession.updated_at || "") || 0;
-  const fallbackTime = Date.parse(fallbackSession.updated_at || "") || 0;
-  return fallbackTime > indexedTime ? fallbackSession : indexedSession;
-}
-
-export async function listRecentSessions(limit = 8) {
-  let indexedSessions = [];
-  let fallbackSessions = [];
-  try {
-    indexedSessions = await withStore("readonly", (store) => store.getAll());
-  } catch {
-    indexedSessions = [];
-  }
-  try {
-    fallbackSessions = fallbackList();
-  } catch {
-    fallbackSessions = [];
-  }
-
-  const byID = new Map();
-  for (const candidate of [...indexedSessions, ...fallbackSessions]) {
-    if (!candidate?.id || !candidate?.template_name) {
-      continue;
-    }
-    const existing = byID.get(candidate.id);
-    if (!existing || String(candidate.updated_at).localeCompare(String(existing.updated_at)) > 0) {
-      byID.set(candidate.id, candidate);
-    }
-  }
-
-  return [...byID.values()]
-    .sort((left, right) => String(right.updated_at).localeCompare(String(left.updated_at)))
-    .slice(0, limit);
 }
