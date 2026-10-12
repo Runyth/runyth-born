@@ -10,8 +10,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/Akkitto/template-wizard-web/internal/staticapp"
-	templatecatalog "github.com/Akkitto/template-wizard-web/internal/templates"
+	"github.com/Runyth/runyth-born/internal/staticapp"
+	templatecatalog "github.com/Runyth/runyth-born/internal/templates"
 )
 
 type catalogDocument struct {

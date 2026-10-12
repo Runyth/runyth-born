@@ -1,6 +1,6 @@
 # Operations
 
-Template Wizard Web 2.x has no production application process. Operations consist of building and publishing immutable static files.
+Runyth Born 2.x has no production application process. Operations consist of building and publishing immutable static files.
 
 ## Preferred deployment: GitHub Pages
 
@@ -27,8 +27,8 @@ After the Pages workflow succeeds, verify the actual deployment with the same
 browser acceptance suite (requires the development test dependencies):
 
 ```bash
-SITE_BASE_PATH=/template-wizard make build
-LIVE_SITE_URL=https://akkitto.github.io/template-wizard/ npm run test:browser
+SITE_BASE_PATH=/runyth-born make build
+LIVE_SITE_URL=https://runyth.github.io/runyth-born/ npm run test:browser
 ```
 
 This exercises the live homepage, autosave/reload, touch navigation, Markdown

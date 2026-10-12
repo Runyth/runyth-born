@@ -1,9 +1,9 @@
 "use strict";
 
-const DATABASE_NAME = "template-wizard-web";
+const DATABASE_NAME = "runyth-born";
 const DATABASE_VERSION = 2;
 const STORE_NAME = "sessions";
-const FALLBACK_PREFIX = "template-wizard-web.session.v2.";
+const FALLBACK_PREFIX = "runyth-born.session.v2.";
 
 let databasePromise;
 

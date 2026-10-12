@@ -10,7 +10,7 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/Akkitto/template-wizard-web/internal/mdast"
+	"github.com/Runyth/runyth-born/internal/mdast"
 )
 
 type Entry struct {

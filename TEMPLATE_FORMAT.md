@@ -1,6 +1,6 @@
 # Template Format
 
-Template Wizard Web reads raw mdast documents from the repository `templates/` directory. Supported file extensions are `.json`, `.yaml`, and `.yml`.
+Runyth Born reads raw mdast documents from the repository `templates/` directory. Supported file extensions are `.json`, `.yaml`, and `.yml`.
 
 The build validates templates and generates the static `dist/templates/catalog.json` and `*.compiled.json` files automatically. Only generated JSON and plain JavaScript are needed at runtime; Go is a build-time tool. A template change therefore requires a rebuild/redeployment; there is no runtime directory scan in 2.x.
 

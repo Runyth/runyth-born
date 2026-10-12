@@ -48,9 +48,9 @@ test("portable resume payload round-trips only the state needed to reconcile ans
 });
 
 test("portable resume URL keeps state in the fragment", async () => {
-  const value = await buildResumeURL(exampleSession(), "https://example.invalid/template-wizard/wizard.html?session=old");
+  const value = await buildResumeURL(exampleSession(), "https://example.invalid/runyth-born/wizard.html?session=old");
   const url = new URL(value);
-  assert.equal(url.pathname, "/template-wizard/wizard.html");
+  assert.equal(url.pathname, "/runyth-born/wizard.html");
   assert.equal(url.search, "");
   assert.match(url.hash, /^#resume=/u);
 });

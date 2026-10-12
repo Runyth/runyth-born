@@ -2,7 +2,7 @@
 
 ## Security model
 
-Template Wizard Web 2.x is a static client-side application. It has no account system, session API, database, application server, Docker socket, writable production volume, or backend secret.
+Runyth Born 2.x is a static client-side application. It has no account system, session API, database, application server, Docker socket, writable production volume, or backend secret.
 
 The main sensitive data is questionnaire content entered by players.
 
@@ -24,7 +24,7 @@ The snapshot is compressed/encoded, **not encrypted**. Anyone who receives the c
 
 Treat portable resume links as private data. Do not put a real link in public issues, logs, screenshots, or documentation.
 
-Large questionnaires may create long URLs. URL-length limits belong to the browser and any software used to copy or transmit the link; they are not controlled by Template Wizard.
+Large questionnaires may create long URLs. URL-length limits belong to the browser and any software used to copy or transmit the link; they are not controlled by Runyth Born.
 
 ## Static-host exposure
 

@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	markdownrenderer "github.com/Akkitto/template-wizard-web/internal/markdown"
-	"github.com/Akkitto/template-wizard-web/internal/mdast"
+	markdownrenderer "github.com/Runyth/runyth-born/internal/markdown"
+	"github.com/Runyth/runyth-born/internal/mdast"
 )
 
 type Section struct {

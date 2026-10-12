@@ -510,7 +510,7 @@ async function initialise() {
       cleanURL.hash = "";
       history.replaceState({}, "", cleanURL);
     }
-    document.title = `${session.template_name} · Template Wizard`;
+    document.title = `${session.template_name} · Runyth Born`;
     elements.title.textContent = session.template_name;
     elements.player.textContent = session.player_name || "";
     elements.player.hidden = !session.player_name;

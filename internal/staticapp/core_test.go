@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Akkitto/template-wizard-web/internal/mdast"
+	"github.com/Runyth/runyth-born/internal/mdast"
 )
 
 func TestAnalyzeAndReconcileAnswers(t *testing.T) {

@@ -1,6 +1,6 @@
-# Template Wizard Web
+# Runyth Born
 
-Template Wizard Web is a completely static browser application for filling reusable Markdown questionnaires correctly. Version 2.0.0 requires no application server, database, container, reverse proxy, writable server volume, or backend API.
+Runyth Born is a completely static browser application for filling reusable Markdown questionnaires correctly. Version 2.0.0 requires no application server, database, container, reverse proxy, writable server volume, or backend API.
 
 The deployed site consists only of HTML, CSS, JavaScript, and repository-backed JSON template data, making GitHub Pages through GitHub Actions the preferred deployment target.
 
@@ -42,7 +42,7 @@ The repository is designed around the `master` branch and `.github/workflows/pag
 
 No Go program, WebAssembly runtime, Node.js process, or service runs in production. Go is only a build-time template compiler, like a static site generator.
 
-No `gh-pages` branch is required. Relative asset paths make the site work both at an account root and below a project path such as `https://example.github.io/template-wizard-web/`.
+No `gh-pages` branch is required. Relative asset paths make the site work both at an account root and below a project path such as `https://example.github.io/runyth-born/`.
 
 ## Local development
 

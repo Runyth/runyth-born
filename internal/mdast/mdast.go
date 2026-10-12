@@ -12,7 +12,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/Akkitto/template-wizard-web/internal/yamlmini"
+	"github.com/Runyth/runyth-born/internal/yamlmini"
 )
 
 type Document map[string]any

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/Akkitto/template-wizard-web/internal/mdast"
+	"github.com/Runyth/runyth-born/internal/mdast"
 )
 
 func Render(document mdast.Document) (string, error) {

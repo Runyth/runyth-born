@@ -7,9 +7,9 @@ declare -r version="$(tr -d '[:space:]' < "${project_root}/VERSION")"
 declare -r release_dir="${project_root}/release"
 declare -r dist_dir="${project_root}/dist"
 declare -r temporary_root="$(mktemp -d)"
-declare -r source_name="template-wizard-web-${version}-src"
-declare -r runtime_name="template-wizard-web-${version}-run"
-declare -r docs_name="template-wizard-web-${version}-doc"
+declare -r source_name="runyth-born-${version}-src"
+declare -r runtime_name="runyth-born-${version}-run"
+declare -r docs_name="runyth-born-${version}-doc"
 trap 'rm -rf -- "${temporary_root}"' EXIT
 
 cd -- "${project_root}"

@@ -19,8 +19,8 @@ if (liveURL) {
   assert.equal(liveURL.pathname, configuredBase, "Live URL must match the built artifact's base path");
   assert.equal(liveURL.search + liveURL.hash, "");
 }
-const temporaryDist = liveURL ? null : await fs.mkdtemp(path.join(tmpdir(), "template-wizard-browser-"));
-const extraBase = configuredBase === "/" ? "/template-wizard/" : "/";
+const temporaryDist = liveURL ? null : await fs.mkdtemp(path.join(tmpdir(), "runyth-born-browser-"));
+const extraBase = configuredBase === "/" ? "/runyth-born/" : "/";
 const fixtures = (liveURL ? [[configuredBase, dist]] : [[configuredBase, dist], [extraBase, temporaryDist]])
   .sort((a, b) => b[0].length - a[0].length);
 const mime = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".json": "application/json" };

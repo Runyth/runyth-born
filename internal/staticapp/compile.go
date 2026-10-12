@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/Akkitto/template-wizard-web/internal/markdown"
-	"github.com/Akkitto/template-wizard-web/internal/mdast"
+	"github.com/Runyth/runyth-born/internal/markdown"
+	"github.com/Runyth/runyth-born/internal/mdast"
 )
 
 // CompiledTemplate stores layout and question metadata for the plain JS client.
@@ -37,7 +37,7 @@ func Compile(source []byte, extension string) (CompiledTemplate, error) {
 		return CompiledTemplate{}, err
 	}
 	// Alphanumeric markers survive Markdown escaping; avoid content collisions.
-	marker := "TW" + analysis.Fingerprint
+	marker := "RB" + analysis.Fingerprint
 	for strings.Contains(analysis.Markdown, marker) {
 		marker += "X"
 	}

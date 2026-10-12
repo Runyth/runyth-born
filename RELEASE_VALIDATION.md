@@ -44,9 +44,9 @@ make package
 Expected artifacts:
 
 ```text
-release/template-wizard-web-<version>-src.zip
-release/template-wizard-web-<version>-run.zip
-release/template-wizard-web-<version>-doc.zip
+release/runyth-born-<version>-src.zip
+release/runyth-born-<version>-run.zip
+release/runyth-born-<version>-doc.zip
 ```
 
 The source ZIP intentionally contains `.git` and its available repository history. The runtime ZIP contains only deployable static-site files. The documentation ZIP contains no runtime binaries.

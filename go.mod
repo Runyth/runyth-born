@@ -1,3 +1,3 @@
-module github.com/Akkitto/template-wizard-web
+module github.com/Runyth/runyth-born
 
 go 1.23
