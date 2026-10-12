@@ -6,6 +6,7 @@
     "test:browser": "node tests/browser/smoke.mjs dist"
   },
   "devDependencies": {
+    "markdown-it": "^15.0.2",
     "playwright": "1.63.0"
   }
 }
