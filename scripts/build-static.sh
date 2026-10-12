@@ -9,18 +9,31 @@ declare -r version="$(tr -d '[:space:]' < "${project_root}/VERSION")"
 
 cd -- "${project_root}"
 
-# Never delete source directories when a caller supplies an output override.
+# Never delete the project directory, one of its ancestors, or tracked source
+# when a caller supplies an output override. Only the default dist directory is
+# a designated output inside the repository.
 declare -r resolved_output="$(realpath -m -- "${output_dir}")"
-if [[ "${project_root}/" == "${resolved_output}/"* ]]; then
+if [[ "${resolved_output}" == "${project_root}" || "${project_root}/" == "${resolved_output}/"* ]]; then
   printf 'Refusing to replace the project directory or an ancestor: %s\n' "${output_dir}" >&2
   exit 1
 fi
-for source_dir in site templates cmd internal scripts docs .git .github; do
-  if [[ "${resolved_output}/" == "${project_root}/${source_dir}/"* ]]; then
-    printf 'Refusing to replace source directory: %s\n' "${output_dir}" >&2
+if [[ "${resolved_output}/" == "${project_root}/.git/"* ]]; then
+  printf 'Refusing to replace the Git repository: %s\n' "${output_dir}" >&2
+  exit 1
+fi
+if [[ "${resolved_output}/" == "${project_root}/"* && "${resolved_output}" != "${project_root}/dist" ]]; then
+  declare -r relative_output="${resolved_output#"${project_root}"/}"
+  if git -C "${project_root}" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    if [[ -n "$(git -C "${project_root}" ls-files -- "${relative_output}")" ]] ||
+      git -C "${project_root}" ls-files | cut -d/ -f1 | sort -u | grep -qxF -- "${relative_output%%/*}"; then
+      printf 'Refusing to replace tracked source: %s\n' "${output_dir}" >&2
+      exit 1
+    fi
+  else
+    printf 'Refusing an in-repository output override without Git: %s\n' "${output_dir}" >&2
     exit 1
   fi
-done
+fi
 
 rm -rf -- "${output_dir}"
 mkdir -p -- "${output_dir}/templates" "${output_dir}/assets"
