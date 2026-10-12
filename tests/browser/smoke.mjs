@@ -160,6 +160,152 @@ try {
   assert.equal(await page.locator("#answer").inputValue(), "Fallback saved");
   await fallback.close();
   console.log("Browser acceptance passed: localStorage fallback");
+
+  // Stale-tab protection: a second tab navigating without edits must never
+  // rewrite saved answers, and divergent edits are rejected, never stored.
+  const tabs = await browser.newContext({ hasTouch: true, viewport: { width: 390, height: 844 } });
+  const tabA = await tabs.newPage();
+  await tabA.goto(origin + fixtures[0][0]);
+  await tabA.locator(".start-form input").first().fill("Alex");
+  await tabA.locator(".start-form button").first().click();
+  await loaded(tabA);
+  const sharedSessionURL = tabA.url();
+  await tabA.locator("#answer").fill("Original q1");
+  await tabA.waitForFunction(() => document.getElementById("save-status").textContent === "Saved locally");
+
+  const tabB = await tabs.newPage();
+  await tabB.goto(sharedSessionURL);
+  await loaded(tabB);
+  assert.equal(await tabB.locator("#answer").inputValue(), "Original q1");
+
+  await tabA.locator("#answer").fill("New q1 entered in tab A");
+  await tabA.waitForFunction(() => document.getElementById("save-status").textContent === "Saved locally");
+
+  await tabB.locator("#next-question").tap();
+  await tabB.waitForFunction(() => document.getElementById("question-number").textContent.startsWith("Question 2 "));
+
+  await tabA.reload();
+  await loaded(tabA);
+  await tabA.locator("#previous-question").tap();
+  await tabA.waitForFunction(() => document.getElementById("question-number").textContent.startsWith("Question 1 "));
+  assert.equal(await tabA.locator("#answer").inputValue(), "New q1 entered in tab A");
+
+  await tabB.locator("#answer").fill("Stale edit from tab B");
+  await tabB.waitForFunction(() => /newer version/u.test(document.getElementById("save-status").textContent));
+  await tabs.close();
+  console.log("Browser acceptance passed: stale tabs");
+
+  // Clock independence: revision, not wall-clock order, resolves divergent
+  // portable copies in both directions.
+  const clocks = await browser.newContext({ hasTouch: true, viewport: { width: 390, height: 844 } });
+  const clockPage = await clocks.newPage();
+  await clockPage.goto(origin + fixtures[0][0]);
+  await clockPage.locator(".start-form input").first().fill("Alex");
+  await clockPage.locator(".start-form button").first().click();
+  await loaded(clockPage);
+  const clockSessionURL = clockPage.url();
+  const clockSessionID = new URL(clockSessionURL).searchParams.get("session");
+  await clockPage.locator("#answer").fill("Device edit");
+  await clockPage.waitForFunction(() => document.getElementById("save-status").textContent === "Saved locally");
+
+  const craftLink = async (revision, answer) => clockPage.evaluate(async ({ sessionID, revision, answer }) => {
+    const portable = await import("./assets/portable.js");
+    const storage = await import("./assets/storage.js");
+    const session = await storage.loadSession(sessionID);
+    const snapshot = { ...session, revision, questions: session.questions.map((question) => ({ ...question, answer })) };
+    return portable.buildResumeURL(snapshot, window.location.href);
+  }, { sessionID: clockSessionID, revision, answer });
+
+  const newerLink = await craftLink(9999, "Newer imported answer");
+  const newer = await clocks.newPage();
+  await newer.goto(newerLink);
+  await loaded(newer);
+  assert.equal(await newer.locator("#answer").inputValue(), "Newer imported answer");
+
+  const olderLink = await craftLink(1, "Stale imported answer");
+  const older = await clocks.newPage();
+  await older.goto(olderLink);
+  await loaded(older);
+  assert.equal(await older.locator("#answer").inputValue(), "Newer imported answer");
+
+  const divergentLink = await craftLink(10000, "Stale imported answer");
+  const divergent = await clocks.newPage();
+  await divergent.goto(divergentLink);
+  await loaded(divergent);
+  assert.equal(await divergent.locator("#answer").inputValue(), "Newer imported answer");
+  assert.equal(await divergent.locator("#reconcile-notice").isVisible(), true);
+  await clocks.close();
+  console.log("Browser acceptance passed: clock-skew imports");
+
+  // Legacy migration: sessions stored under the previous project namespace
+  // become reachable again, and the legacy originals are kept.
+  const legacy = await browser.newContext({ hasTouch: true, viewport: { width: 390, height: 844 } });
+  const seeder = await legacy.newPage();
+  await seeder.goto(origin + fixtures[0][0]);
+  await seeder.evaluate(async () => {
+    const now = new Date().toISOString();
+    const session = {
+      version: 2, id: "legacy-idb-session-0001", template_id: "legacy-template",
+      template_filename: "minimal-template.mdast.json", template_fingerprint: "legacy",
+      template_name: "Character Backstory", player_name: "Alex", created_at: now, updated_at: now,
+      current_question: 0, completed: false,
+      questions: [{ id: "legacy\u001fname#1", fallback_id: "name#1", answer: "Legacy saved answer",
+        label: "Name", breadcrumb: ["Character Backstory", "Core"], context: [], label_ordinal: 1 }],
+    };
+    await new Promise((resolve, reject) => {
+      const request = indexedDB.open("template-wizard-web", 2);
+      request.onupgradeneeded = () => {
+        const database = request.result;
+        if (!database.objectStoreNames.contains("sessions")) {
+          database.createObjectStore("sessions", { keyPath: "id" });
+        }
+      };
+      request.onsuccess = () => {
+        const database = request.result;
+        const transaction = database.transaction("sessions", "readwrite");
+        transaction.objectStore("sessions").put(session);
+        transaction.oncomplete = () => { database.close(); resolve(); };
+        transaction.onerror = () => reject(transaction.error);
+      };
+      request.onerror = () => reject(request.error);
+    });
+    localStorage.setItem("template-wizard-web.session.v2.legacy-fallback-session-01",
+      JSON.stringify({ ...session, id: "legacy-fallback-session-01" }));
+  });
+  const legacyIDB = await legacy.newPage();
+  await legacyIDB.goto(origin + fixtures[0][0] + "wizard.html?session=legacy-idb-session-0001");
+  await loaded(legacyIDB);
+  assert.equal(await legacyIDB.locator("#answer").inputValue(), "Legacy saved answer");
+  const legacyFallback = await legacy.newPage();
+  await legacyFallback.goto(origin + fixtures[0][0] + "wizard.html?session=legacy-fallback-session-01");
+  await loaded(legacyFallback);
+  assert.equal(await legacyFallback.locator("#answer").inputValue(), "Legacy saved answer");
+  assert.equal(await seeder.evaluate(() => localStorage.getItem("template-wizard-web.session.v2.legacy-fallback-session-01") !== null), true);
+  await seeder.reload();
+  await seeder.locator(".start-form button").first().waitFor();
+  assert.equal(await seeder.locator("#recent-list a").count() >= 2, true);
+  await legacy.close();
+  console.log("Browser acceptance passed: legacy migration");
+
+  // Storage cleanup: the finish dialog can delete the local questionnaire.
+  const cleanup = await browser.newContext({ hasTouch: true, viewport: { width: 390, height: 844 } });
+  const cleanupPage = await cleanup.newPage();
+  await cleanupPage.goto(origin + fixtures[0][0]);
+  await cleanupPage.locator(".start-form input").first().fill("Alex");
+  await cleanupPage.locator(".start-form button").first().click();
+  await loaded(cleanupPage);
+  await cleanupPage.locator("#answer").fill("Cleanup answer");
+  await cleanupPage.waitForFunction(() => document.getElementById("save-status").textContent === "Saved locally");
+  await cleanupPage.locator("#finish-download").click();
+  await cleanupPage.waitForFunction(() => document.getElementById("finish-dialog").open);
+  await cleanupPage.locator("#finish-delete").click();
+  assert.equal(await cleanupPage.locator("#finish-delete").textContent(), "Confirm delete");
+  await cleanupPage.locator("#finish-delete").click();
+  await cleanupPage.waitForURL(/index\.html$/u);
+  await cleanupPage.locator("#template-grid").waitFor();
+  assert.equal(await cleanupPage.locator("#recent-section").isVisible(), false);
+  await cleanup.close();
+  console.log("Browser acceptance passed: delete local copy");
 } catch (error) {
   if (activePage && !activePage.isClosed()) {
     console.error(await activePage.evaluate(() => ({ question: document.getElementById("question-number")?.textContent,
