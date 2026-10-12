@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Rename the project to Runyth Born (`runyth-born` for identifiers) across the Go module, npm checks package, browser storage database and fallback keys, release and workflow artifact names, site branding, and documentation; local browser sessions saved under the previous storage names are no longer reachable.
 - Remove browser Go/WebAssembly execution; compile templates to JSON at build time and use plain JavaScript for reconciliation and Markdown downloads.
 - Confirm IndexedDB saves only after transaction commit and fall back after an abort.
 - Preserve cleared answers and restrict fallback merging to globally unique labels.
