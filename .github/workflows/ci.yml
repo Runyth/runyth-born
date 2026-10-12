@@ -36,6 +36,9 @@ jobs:
       - name: Run quality gates
         run: make check
 
+      - name: Check release guard canaries
+        run: bash scripts/test-release-guards.sh
+
       - name: Install browser test tools
         run: npx playwright install --with-deps chromium
 

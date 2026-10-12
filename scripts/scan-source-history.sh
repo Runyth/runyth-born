@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Representative credential and private-data scan over the content a packaged
-# Source ZIP publishes: every blob reachable from the current refs, every
-# commit and annotated tag message, and the plain files inside .git such as
-# the copied configuration and packed refs (F12). Matches are reported
-# redacted — classification and location only, never the matched text.
-# Invalid patterns fail loudly instead of silently scanning nothing.
+# Representative credential and private-data scan over every piece of content
+# the packaged Source ZIP publishes: all stored Git objects — reachable or
+# not, binary or text — decoded through cat-file so commit headers, tag
+# bodies, tree entries and binary payloads are scanned as their real bytes,
+# plus the plain files inside .git such as the copied configuration and
+# packed refs (F12). Matches are reported redacted — classification,
+# object identity and location only, never the matched text. Invalid patterns
+# fail loudly instead of silently scanning nothing.
 # Usage: scripts/scan-source-history.sh [repository-root]
 
 declare -r script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
@@ -26,15 +28,9 @@ patterns=(
   'Authorization header|Authorization: *(Basic |Bearer )[A-Za-z0-9+/=._-]{8,}'
 )
 
-failures=0
-report() {
-  printf 'Credential-like content detected (%s) in %s\n' "$1" "$2" >&2
-  failures=1
-}
-
+declare -a classes=()
+declare -a regexes=()
 combined=""
-classes=()
-regexes=()
 for pattern in "${patterns[@]}"; do
   class="${pattern%%|*}"
   regex="${pattern#*|}"
@@ -53,50 +49,66 @@ for pattern in "${patterns[@]}"; do
   fi
 done
 
-# Trees and blobs of every reachable commit (-I skips binary objects), with
-# the commit messages of the same revisions.
-commits=()
-while IFS= read -r commit; do
-  commits+=("${commit}")
-done < <(git -C "${scan_root}" rev-list --all 2>/dev/null)
-for commit in "${commits[@]}"; do
-  if matches="$(git -C "${scan_root}" grep -I -h -c -E -- "${combined}" "${commit}" -- 2>/dev/null)" && [[ -n "${matches}" ]]; then
-    index=0
-    for regex in "${regexes[@]}"; do
-      if hit="$(git -C "${scan_root}" grep -I -h -c -E -- "${regex}" "${commit}" -- 2>/dev/null)" && [[ -n "${hit}" ]]; then
-        while IFS= read -r line; do
-          report "${classes[${index}]}" "tracked content (${line})"
-        done <<< "${hit}"
-      fi
-      index=$((index + 1))
-    done
-  fi
-  if git -C "${scan_root}" log -1 --format=%B "${commit}" 2>/dev/null | grep -E -q -- "${combined}"; then
-    index=0
-    for regex in "${regexes[@]}"; do
-      if git -C "${scan_root}" log -1 --format=%B "${commit}" 2>/dev/null | grep -E -q -- "${regex}"; then
-        report "${classes[${index}]}" "commit message ${commit}"
-      fi
-      index=$((index + 1))
-    done
-  fi
-done
+failures=0
+report() {
+  printf 'Credential-like content detected (%s) in %s\n' "$1" "$2" >&2
+  failures=1
+}
 
-# Annotated tag messages.
-while IFS=$'\t' read -r refname objecttype objectname; do
-  [[ "${objecttype}" == "tag" ]] || continue
-  if git -C "${scan_root}" cat-file tag "${objectname}" 2>/dev/null | sed '1,/^$/d' | grep -E -q -- "${combined}"; then
-    index=0
-    for regex in "${regexes[@]}"; do
-      if git -C "${scan_root}" cat-file tag "${objectname}" 2>/dev/null | sed '1,/^$/d' | grep -E -q -- "${regex}"; then
-        report "${classes[${index}]}" "tag message ${refname}"
-      fi
-      index=$((index + 1))
-    done
-  fi
-done < <(git -C "${scan_root}" for-each-ref --format='%(refname)%09%(objecttype)%09%(objectname)' refs/tags/ 2>/dev/null)
+# Decode every stored object of the repository. This is exactly the object set
+# a packaged Source ZIP ships, so dangling and out-of-ref objects are part of
+# the published bytes and are scanned the same way (F12).
+python3 - "${scan_root}" "${classes[@]}" "${regexes[@]}" <<'PY'
+import re
+import subprocess
+import sys
 
-# Plain Git support files copied into the archive; binary objects are skipped.
+root = sys.argv[1]
+count = (len(sys.argv) - 2) // 2
+specs = [(sys.argv[2 + i], re.compile(sys.argv[2 + count + i].encode(), re.DOTALL)) for i in range(count)]
+combined = [spec[1] for spec in specs]
+
+found = False
+
+
+def report(cls, location):
+    global found
+    found = True
+    print(f"Credential-like content detected ({cls}) in {location}", file=sys.stderr)
+
+
+batch = subprocess.Popen(
+    ["git", "-C", root, "cat-file", "--batch", "--batch-all-objects", "--buffer"],
+    stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+stream = batch.stdout
+while True:
+    header = stream.readline()
+    if not header:
+        break
+    sha, kind, size = header.decode().split()
+    body = b""
+    remaining = int(size)
+    while remaining > 0:
+        chunk = stream.read(min(remaining, 1 << 20))
+        if not chunk:
+            break
+        body += chunk
+        remaining -= len(chunk)
+    trailing_break = stream.read(1)
+    for cls, pattern in specs:
+        if pattern.search(body):
+            report(cls, f"git object {sha} ({kind})")
+batch.wait()
+if found:
+    sys.exit(1)
+PY
+object_status=$?
+if [[ "${object_status}" -ne 0 ]]; then
+  exit "${object_status}"
+fi
+
+# Plain Git support files copied into the archive. Their bytes are outside the
+# object database and are scanned as files.
 if file_paths="$(grep -R -I -l -E -- "${combined}" "${scan_root}/.git" 2>/dev/null)" && [[ -n "${file_paths}" ]]; then
   while IFS= read -r file_path; do
     index=0
