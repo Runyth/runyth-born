@@ -88,16 +88,19 @@ for archive in archives:
 src_name = next(name for name in names if name.endswith("-src.zip"))
 run_name = next(name for name in names if name.endswith("-run.zip"))
 doc_name = next(name for name in names if name.endswith("-doc.zip"))
+src_root = src_name[:-len(".zip")]
+run_root = run_name[:-len(".zip")]
+doc_root = doc_name[:-len(".zip")]
 
 for required in ["README.md", "LICENSE", ".git/HEAD"]:
-    if f"{src_name}/{required}" not in names[src_name]:
+    if f"{src_root}/{required}" not in names[src_name]:
         raise SystemExit(f"{src_name} is missing {required}")
 
 expected = sorted(
     path.relative_to(dist_dir).as_posix() for path in dist_dir.rglob("*") if path.is_file()
 )
 published = sorted(
-    name[len(run_name) + 1:] for name in names[run_name]
+    name[len(run_root) + 1:] for name in names[run_name]
 )
 if published != expected:
     raise SystemExit("runtime archive does not match the built dist/ contents")
@@ -115,7 +118,7 @@ for required in ["license.txt", "ai-template-prompt.txt", "templates/catalog.jso
 
 for required in ["LICENSE", "README.md", "CHANGELOG.md", "docs"]:
     if not any(
-        path == f"{doc_name}/{required}" or path.startswith(f"{doc_name}/{required}/")
+        path == f"{doc_root}/{required}" or path.startswith(f"{doc_root}/{required}/")
         for path in names[doc_name]
     ):
         raise SystemExit(f"{doc_name} is missing {required}")
