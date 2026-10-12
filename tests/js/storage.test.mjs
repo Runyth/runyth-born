@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { mergeLegacyRecords } from "../../site/assets/storage.js";
+
 const sessionKey = "runyth-born.session.v2.";
+const legacySessionKey = "template-wizard-web.session.v2.";
 
 // Manual mock: request callbacks and the transaction completion are fired by
 // the test, which is what lets a test assert between the write and the commit.
@@ -19,11 +22,12 @@ async function storageMock() {
   let transaction;
   let lastRequest;
   globalThis.indexedDB = {
-    open() {
+    databases: async () => [...stores.keys()].map((name) => ({ name })),
+    open(name) {
       const open = {};
       queueMicrotask(() => {
         open.result = {
-          objectStoreNames: { contains: (name) => stores.has(name) },
+          objectStoreNames: { contains: (store) => (stores.get(name) ?? new Map()).has(store) },
           close() {},
           transaction() {
             transaction = {
@@ -32,7 +36,7 @@ async function storageMock() {
                 transaction.error = new Error("transaction aborted");
                 transaction.onabort?.();
               },
-              objectStore(name) {
+              objectStore(storeName) {
                 if (!stores.has(name)) {
                   stores.set(name, new Map());
                 }
@@ -58,8 +62,9 @@ async function storageMock() {
 }
 
 // Automatic mock: behaves like real IndexedDB (requests fire, then the
-// transaction commits), so tests can simply await the storage API.
-async function autoStorageMock({ storedSessions = [], failTransactions = false, abortAfterPut = false } = {}) {
+// transaction commits), so tests can simply await the storage API. Each named
+// database keeps its own stores, which lets tests seed the legacy namespace.
+async function autoStorageMock({ storedSessions = [], failTransactions = false, abortAfterPut = false, legacySessions = [], legacyFallbackSessions = [] } = {}) {
   const fallback = new Map();
   globalThis.localStorage = {
     setItem: (key, value) => fallback.set(key, String(value)),
@@ -68,13 +73,28 @@ async function autoStorageMock({ storedSessions = [], failTransactions = false, 
     key: (index) => [...fallback.keys()][index] ?? null,
     get length() { return fallback.size; },
   };
-  const stores = new Map([["sessions", new Map(storedSessions.map((record) => [record.id, structuredClone(record)]))]]);
+  const databases = new Map();
+  const storesFor = (name) => {
+    if (!databases.has(name)) {
+      databases.set(name, new Map());
+    }
+    return databases.get(name);
+  };
+  const stores = storesFor("runyth-born");
+  stores.set("sessions", new Map(storedSessions.map((record) => [record.id, structuredClone(record)])));
+  if (legacySessions.length > 0) {
+    storesFor("template-wizard-web").set("sessions", new Map(legacySessions.map((record) => [record.id, structuredClone(record)])));
+  }
+  for (const legacy of legacyFallbackSessions) {
+    fallback.set(legacySessionKey + legacy.id, JSON.stringify(legacy));
+  }
   globalThis.indexedDB = {
-    open() {
+    databases: async () => [...databases.keys()].map((name) => ({ name })),
+    open(name) {
       const open = {};
       queueMicrotask(() => {
         open.result = {
-          objectStoreNames: { contains: (name) => stores.has(name) },
+          objectStoreNames: { contains: (store) => storesFor(name).has(store) },
           close() {},
           transaction() {
             if (failTransactions) {
@@ -86,11 +106,12 @@ async function autoStorageMock({ storedSessions = [], failTransactions = false, 
                 currentTransaction.error = new Error("transaction aborted");
                 currentTransaction.onabort?.();
               },
-              objectStore(name) {
-                if (!stores.has(name)) {
-                  stores.set(name, new Map());
+              objectStore(storeName) {
+                const map = storesFor(name);
+                if (!map.has(storeName)) {
+                  map.set(storeName, new Map());
                 }
-                const map = stores.get(name);
+                const recordsForStore = map.get(storeName);
                 const issue = (request) => {
                   queueMicrotask(() => {
                     if (request.rollback) {
@@ -103,10 +124,10 @@ async function autoStorageMock({ storedSessions = [], failTransactions = false, 
                   return request;
                 };
                 return {
-                  get: (id) => issue({ result: map.has(id) ? structuredClone(map.get(id)) : null }),
-                  getAll: () => issue({ result: [...map.values()].map((record) => structuredClone(record)) }),
-                  put: (record) => issue({ rollback: abortAfterPut, apply: () => map.set(record.id, structuredClone(record)), result: structuredClone(record) }),
-                  delete: (id) => issue({ apply: () => map.delete(id) }),
+                  get: (id) => issue({ result: recordsForStore.has(id) ? structuredClone(recordsForStore.get(id)) : null }),
+                  getAll: () => issue({ result: [...recordsForStore.values()].map((record) => structuredClone(record)) }),
+                  put: (record) => issue({ rollback: abortAfterPut, apply: () => recordsForStore.set(record.id, structuredClone(record)), result: structuredClone(record) }),
+                  delete: (id) => issue({ apply: () => recordsForStore.delete(id) }),
                 };
               },
             };
@@ -250,4 +271,37 @@ test("recent sessions list only real sessions, not position or recovery keys", a
   mock.fallback.set(sessionKey + "test.recovery", JSON.stringify({ id: "test", questions: [] }));
   const recent = await mock.module.listRecentSessions();
   assert.deepEqual(recent.map((entry) => entry.id), ["test"]);
+});
+
+test("legacy records merge only when the new namespace has no copy", () => {
+  const records = mergeLegacyRecords({
+    legacySessions: [{ id: "legacy-idb", answer: "one" }, { id: "known", answer: "superseded" }],
+    legacyFallbackSessions: [{ id: "legacy-fallback", answer: "two" }, { id: "known", answer: "ignored" }],
+    indexedSessions: [{ id: "known", revision: 9 }],
+  });
+  assert.deepEqual(records.map((record) => record.id), ["legacy-idb", "legacy-fallback"]);
+  assert.ok(records.every((record) => record.revision === 1));
+});
+
+test("opening a store migrates seeded legacy sessions into the new namespace", async () => {
+  const mock = await autoStorageMock({
+    legacySessions: [{ id: "legacy-idb", answer: "one", template_name: "Legacy", questions: [] }],
+    legacyFallbackSessions: [{ id: "legacy-fallback", answer: "two", template_name: "Legacy", questions: [] }],
+  });
+  await mock.module.listRecentSessions(20);
+  assert.equal(mock.stores.get("sessions").get("legacy-idb").answer, "one");
+  assert.equal(mock.stores.get("sessions").get("legacy-fallback").answer, "two");
+  assert.equal(mock.fallback.has(legacySessionKey + "legacy-fallback"), true);
+  const loaded = await mock.module.loadSession("legacy-idb");
+  assert.equal(loaded.answer, "one");
+});
+
+test("migration leaves existing new-namespace records untouched", async () => {
+  const mock = await autoStorageMock({
+    storedSessions: [{ id: "shared", revision: 7, answer: "newer" }],
+    legacySessions: [{ id: "shared", answer: "legacy" }],
+  });
+  await mock.module.listRecentSessions(20);
+  assert.equal(mock.stores.get("sessions").get("shared").revision, 7);
+  assert.equal(mock.stores.get("sessions").get("shared").answer, "newer");
 });

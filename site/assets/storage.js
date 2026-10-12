@@ -14,37 +14,179 @@ export class StorageConflictError extends Error {
   }
 }
 
-let databasePromise;
+// The static 2.x application stored sessions under its previous project name.
+// Those records are copied into the renamed stores on first open so existing
+// sessions keep working after the upgrade; the original legacy entries are
+// kept untouched as recoverable copies.
+const LEGACY_DATABASE_NAME = "template-wizard-web";
+const LEGACY_FALLBACK_PREFIX = "template-wizard-web.session.v2.";
 
-function openDatabase() {
+let databasePromise;
+let legacyMigrationPromise;
+
+function openRawDatabase() {
   if (!globalThis.indexedDB) {
     return Promise.reject(new Error("IndexedDB is unavailable"));
   }
-  if (!databasePromise) {
-    databasePromise = new Promise((resolve, reject) => {
-      const request = indexedDB.open(DATABASE_NAME, DATABASE_VERSION);
-      request.onupgradeneeded = () => {
-        const database = request.result;
-        for (const storeName of [STORE_NAME, POSITION_STORE_NAME, RECOVERY_STORE_NAME]) {
-          if (!database.objectStoreNames.contains(storeName)) {
-            database.createObjectStore(storeName, { keyPath: "id" });
-          }
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(DATABASE_NAME, DATABASE_VERSION);
+    request.onupgradeneeded = () => {
+      const database = request.result;
+      for (const storeName of [STORE_NAME, POSITION_STORE_NAME, RECOVERY_STORE_NAME]) {
+        if (!database.objectStoreNames.contains(storeName)) {
+          database.createObjectStore(storeName, { keyPath: "id" });
         }
-      };
-      request.onsuccess = () => resolve(request.result);
-      request.onerror = () => reject(request.error || new Error("Could not open browser storage"));
-      request.onblocked = () => reject(new Error("Browser storage upgrade is blocked by another tab"));
+      }
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error || new Error("Could not open browser storage"));
+    request.onblocked = () => reject(new Error("Browser storage upgrade is blocked by another tab"));
+  });
+}
+
+function openDatabase() {
+  if (!databasePromise) {
+    databasePromise = openRawDatabase();
+  }
+  return migrateOnce().then(() => databasePromise);
+}
+
+// Reads every session from the legacy namespace, then copies the ones the new
+// namespace does not have yet. Migration is idempotent: it only adds missing
+// records and never deletes the legacy originals. It works on a separate raw
+// database connection so it never waits on itself through openDatabase().
+function migrateOnce() {
+  if (!legacyMigrationPromise) {
+    legacyMigrationPromise = migrateLegacyRecords().catch((error) => {
+      // Retry on the next open instead of permanently disabling migration.
+      legacyMigrationPromise = null;
+      throw error;
     });
   }
-  return databasePromise;
+  return legacyMigrationPromise;
+}
+
+async function migrateLegacyRecords() {
+  if (!globalThis.indexedDB) {
+    return;
+  }
+  const legacySessions = await readLegacySessions();
+  const legacyFallbackSessions = readLegacyFallbackSessions();
+  if (legacySessions.length === 0 && legacyFallbackSessions.length === 0) {
+    return;
+  }
+
+  const database = await openRawDatabase();
+  try {
+    let indexedSessions = [];
+    try {
+      indexedSessions = await transactionOn(database, STORE_NAME, "readonly", getAllOperate());
+    } catch { /* The new stores may be unavailable; the fallback check still applies. */ }
+    let fallbackSessions = [];
+    try {
+      fallbackSessions = fallbackList();
+    } catch { /* Fallback storage is unavailable. */ }
+
+    const records = mergeLegacyRecords({ legacySessions, legacyFallbackSessions, indexedSessions, fallbackSessions });
+    for (const record of records) {
+      try {
+        await transactionOn(database, STORE_NAME, "readwrite", putOperate(record));
+      } catch {
+        try {
+          fallbackSave(record);
+        } catch { /* Neither store could accept the migrated record. */ }
+      }
+    }
+  } finally {
+    database.close();
+  }
+}
+
+function readLegacySessions() {
+  if (typeof indexedDB.databases === "function") {
+    return indexedDB.databases().then((databases) => {
+      if (!databases.some((entry) => entry?.name === LEGACY_DATABASE_NAME)) {
+        return [];
+      }
+      return openLegacyDatabase();
+    }).catch(() => openLegacyDatabase());
+  }
+  return openLegacyDatabase();
+}
+
+function openLegacyDatabase() {
+  return new Promise((resolve) => {
+    const request = indexedDB.open(LEGACY_DATABASE_NAME);
+    request.onsuccess = () => {
+      const database = request.result;
+      if (!database.objectStoreNames.contains(STORE_NAME)) {
+        database.close();
+        resolve([]);
+        return;
+      }
+      const transaction = database.transaction(STORE_NAME, "readonly");
+      const request2 = transaction.objectStore(STORE_NAME).getAll();
+      request2.onsuccess = () => {
+        database.close();
+        resolve(request2.result || []);
+      };
+      request2.onerror = () => {
+        database.close();
+        resolve([]);
+      };
+    };
+    request.onerror = () => resolve([]);
+    request.onblocked = () => resolve([]);
+  });
+}
+
+function readLegacyFallbackSessions() {
+  const sessions = [];
+  try {
+    for (let index = 0; index < localStorage.length; index += 1) {
+      const key = localStorage.key(index);
+      if (!key?.startsWith(LEGACY_FALLBACK_PREFIX)) {
+        continue;
+      }
+      try {
+        const session = JSON.parse(localStorage.getItem(key) || "null");
+        if (session?.id) {
+          sessions.push(session);
+        }
+      } catch { /* Ignore malformed legacy entries. */ }
+    }
+  } catch { /* Fallback storage is unavailable. */ }
+  return sessions;
+}
+
+// Pure helper: returns the legacy records the new namespace is missing, with a
+// starting revision so migrated sessions participate in save ordering.
+export function mergeLegacyRecords({ legacySessions = [], legacyFallbackSessions = [], indexedSessions = [], fallbackSessions = [] } = {}) {
+  const known = new Set([...indexedSessions, ...fallbackSessions]
+    .map((entry) => entry?.id)
+    .filter(Boolean));
+  const queued = new Set();
+  const records = [];
+  for (const legacy of [...legacySessions, ...legacyFallbackSessions]) {
+    if (!legacy?.id || known.has(legacy.id) || queued.has(legacy.id)) {
+      continue;
+    }
+    queued.add(legacy.id);
+    records.push({ ...structuredClone(legacy), revision: normalizeRevision(legacy.revision) || 1 });
+  }
+  return records;
 }
 
 // Runs one transaction and resolves with the value that `operate` records in
 // `state.result` (immediately for plain writes, or from request callbacks for
 // read-modify-write work). Commit failures and aborts reject; a manual abort
 // from `operate` rejects with the recorded conflict instead of a storage error.
-function runTransaction(storeNames, mode, operate) {
-  return openDatabase().then((database) => new Promise((resolve, reject) => {
+// Runs one transaction and resolves with the value that `operate` records in
+// `state.result` (immediately for plain writes, or from request callbacks for
+// read-modify-write work). Commit failures and aborts reject; a manual abort
+// from `operate` rejects with the recorded conflict instead of a storage error.
+function transactionOn(database, storeNames, mode, operate) {
+  return new Promise((resolve, reject) => {
     const names = Array.isArray(storeNames) ? storeNames : [storeNames];
     const transaction = database.transaction(names, mode);
     const stores = names.map((name) => transaction.objectStore(name));
@@ -60,31 +202,47 @@ function runTransaction(storeNames, mode, operate) {
     } catch (error) {
       reject(error);
     }
-  }));
+  });
 }
 
-function putRecord(storeName, record) {
-  return runTransaction(storeName, "readwrite", (store, transaction, state) => {
+function runTransaction(storeNames, mode, operate) {
+  return openDatabase().then((database) => transactionOn(database, storeNames, mode, operate));
+}
+
+function putOperate(record) {
+  return (store, transaction, state) => {
     store.put(record);
     state.result = record;
     return state.result;
-  });
+  };
 }
 
-function getRecord(storeName, id) {
-  return runTransaction(storeName, "readonly", (store, transaction, state) => {
+function getOperate(id) {
+  return (store, transaction, state) => {
     const request = store.get(id);
     request.onsuccess = () => { state.result = request.result; };
     return state.result;
-  });
+  };
 }
 
-function getAllRecords(storeName) {
-  return runTransaction(storeName, "readonly", (store, transaction, state) => {
+function getAllOperate() {
+  return (store, transaction, state) => {
     const request = store.getAll();
     request.onsuccess = () => { state.result = request.result || []; };
     return state.result;
-  });
+  };
+}
+
+function putRecord(storeName, record) {
+  return runTransaction(storeName, "readwrite", putOperate(record));
+}
+
+function getRecord(storeName, id) {
+  return runTransaction(storeName, "readonly", getOperate(id));
+}
+
+function getAllRecords(storeName) {
+  return runTransaction(storeName, "readonly", getAllOperate());
 }
 
 export function normalizeRevision(value) {
