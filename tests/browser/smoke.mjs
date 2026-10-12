@@ -423,6 +423,224 @@ try {
   assert.equal(cleared.legacyRecords, 0, "legacy database copies of the deleted questionnaire must be gone");
   await migrated.close();
   console.log("Browser acceptance passed: migrated deletion");
+
+  // A save queued before the deletion cannot recreate a removed questionnaire
+  // (F11): the second tab's pending autosave runs after tab A deleted the
+  // session and must not acknowledge success or resurrect it.
+  const pendingDelete = await browser.newContext({ hasTouch: true, viewport: { width: 390, height: 844 } });
+  const deleter = await pendingDelete.newPage();
+  await deleter.goto(origin + fixtures[0][0]);
+  await deleter.locator(".start-form input").first().fill("Alex");
+  await deleter.locator(".start-form button").first().click();
+  await loaded(deleter);
+  const pendingSessionURL = deleter.url();
+  const pendingSessionID = new URL(pendingSessionURL).searchParams.get("session");
+
+  const queued = await pendingDelete.newPage();
+  await queued.clock.install();
+  await queued.goto(pendingSessionURL);
+  await loaded(queued);
+  await queued.locator("#answer").fill("Private edit entered before deletion");
+  // No save delay is granted: the 400 ms autosave stays scheduled.
+
+  await deleter.locator("#finish-download").click();
+  await deleter.waitForFunction(() => document.getElementById("finish-dialog").open);
+  await deleter.locator("#finish-delete").click();
+  assert.equal(await deleter.locator("#finish-delete").textContent(), "Confirm delete");
+  await deleter.locator("#finish-delete").click();
+  await deleter.waitForURL(/index\.html$/u);
+  assert.equal(await deleter.locator("#recent-section").isVisible(), false, "the deleted questionnaire must not be listed");
+
+  // Only now does the queued save execute — with no new editing afterwards.
+  await queued.clock.runFor(500);
+  await queued.waitForFunction(() => document.getElementById("save-status").textContent !== "Unsaved changes", { timeout: 15000 });
+  assert.equal(await queued.locator("#save-status").textContent(), "Removed locally in another tab", "the queued save must not report success");
+  const resurrected = await queued.evaluate(async (sessionID) => {
+    const storage = await import("./assets/storage.js");
+    return { loaded: await storage.loadSession(sessionID), recent: (await storage.listRecentSessions(10)).map((entry) => entry.id) };
+  }, pendingSessionID);
+  assert.equal(resurrected.loaded, null, "the deleted session must not return");
+  assert.ok(!resurrected.recent.includes(pendingSessionID), "the deleted session must not be listed");
+  await pendingDelete.close();
+  console.log("Browser acceptance passed: pending-save deletion");
+
+  // Equal-revision divergent copies preserve the real question answers of the
+  // unselected session record (F01), and the reviews survive a later save.
+  const tied = await browser.newContext({ hasTouch: true, viewport: { width: 390, height: 844 } });
+  const tiedSeed = await tied.newPage();
+  await tiedSeed.goto(origin + fixtures[0][0]);
+  await tiedSeed.evaluate(async () => {
+    const now = new Date().toISOString();
+    const questions = (answer) => [{ id: "tied\u001fname#1", fallback_id: "name#1", answer, label: "Name",
+      breadcrumb: ["Character Backstory", "Core"], context: [], label_ordinal: 1 }];
+    await new Promise((resolve, reject) => {
+      const request = indexedDB.open("runyth-born", 4);
+      request.onupgradeneeded = () => {
+        const database = request.result;
+        for (const store of ["sessions", "positions", "recoveries", "deleted"]) {
+          if (!database.objectStoreNames.contains(store)) {
+            database.createObjectStore(store, { keyPath: "id" });
+          }
+        }
+      };
+      request.onsuccess = () => {
+        const database = request.result;
+        const transaction = database.transaction("sessions", "readwrite");
+        transaction.objectStore("sessions").put({
+          version: 2, id: "tied-copy-session-01", template_id: "legacy-template",
+          template_filename: "minimal-template.mdast.json", template_fingerprint: "seed",
+          template_name: "Character Backstory", player_name: "Alex", created_at: now, updated_at: now,
+          current_question: 0, completed: false, revision: 10,
+          questions: questions("IndexedDB tied copy"),
+        });
+        transaction.oncomplete = () => { database.close(); resolve(); };
+        transaction.onerror = () => reject(transaction.error);
+      };
+      request.onerror = () => reject(request.error);
+    });
+    localStorage.setItem("runyth-born.session.v2.tied-copy-session-01", JSON.stringify({
+      version: 2, id: "tied-copy-session-01", template_id: "legacy-template",
+      template_filename: "minimal-template.mdast.json", template_fingerprint: "seed",
+      template_name: "Character Backstory", player_name: "Alex", created_at: now, updated_at: now,
+      current_question: 0, completed: false, revision: 10,
+      questions: questions("Fallback tied copy"),
+    }));
+  });
+  const tiedPage = await tied.newPage();
+  await tiedPage.goto(origin + fixtures[0][0] + "wizard.html?session=tied-copy-session-01");
+  await loaded(tiedPage);
+  assert.ok(["IndexedDB tied copy", "Fallback tied copy"].includes(await tiedPage.locator("#answer").inputValue()));
+  await tiedPage.locator("#review-preserved").click();
+  const tiedEntries = await tiedPage.locator(".orphan-entry").allTextContents();
+  assert.equal(tiedEntries.length, 1, "exactly the unselected copy is preserved");
+  assert.match(tiedEntries[0], /IndexedDB tied copy|Fallback tied copy/u, "the unselected real question answer is preserved");
+  await tiedPage.keyboard.press("Escape");
+  // A following save and a reload must both keep the unselected copy
+  // available for review (F01).
+  await tiedPage.locator("#answer").fill("Post-tie edit");
+  await tiedPage.waitForFunction(() => document.getElementById("save-status").textContent === "Saved locally");
+  await tiedPage.reload();
+  await loaded(tiedPage);
+  assert.equal(await tiedPage.locator("#reconcile-notice").isVisible(), true, "the unselected copy remains preserved after saving");
+  await tiedPage.locator("#review-preserved").click();
+  const tiedAfter = await tiedPage.locator(".orphan-entry").allTextContents();
+  assert.match(tiedAfter[0], /IndexedDB tied copy|Fallback tied copy/u, "the unselected answer survives the preservations of later saves (F01)");
+  await tiedPage.keyboard.press("Escape");
+  await tied.close();
+  console.log("Browser acceptance passed: tied divergent copies");
+
+  // Recovery records from both storage copies merge, so a clock-rolled-back
+  // acknowledged record is never suppressed (F02).
+  const recovery = await browser.newContext({ hasTouch: true, viewport: { width: 390, height: 844 } });
+  const recoverySeed = await recovery.newPage();
+  await recoverySeed.goto(origin + fixtures[0][0]);
+  await recoverySeed.evaluate(async () => {
+    const questions = (answer) => [{ id: "merge\u001fname#1", fallback_id: "name#1", answer, label: "Name",
+      breadcrumb: [], context: [], label_ordinal: 1 }];
+    await new Promise((resolve, reject) => {
+      const request = indexedDB.open("runyth-born", 4);
+      request.onupgradeneeded = (event) => {
+        const database = request.result;
+        for (const store of ["sessions", "positions", "recoveries", "deleted"]) {
+          if (!database.objectStoreNames.contains(store)) {
+            database.createObjectStore(store, { keyPath: "id" });
+          }
+        }
+      };
+      request.onsuccess = () => {
+        const database = request.result;
+        const transaction = database.transaction("recoveries", "readwrite");
+        transaction.objectStore("recoveries").put({
+          id: "merged-recovery-session-01", reason: "reconcile",
+          saved_at: "2026-01-01T00:00:00.000Z",
+          entries: questions("Older recovery copy"),
+        });
+        transaction.oncomplete = () => { database.close(); resolve(); };
+        transaction.onerror = () => reject(transaction.error);
+      };
+      request.onerror = () => reject(request.error);
+    });
+    const session = {
+      version: 2, id: "merged-recovery-session-01", template_id: "legacy-template",
+      template_filename: "minimal-template.mdast.json", template_fingerprint: "seed",
+      template_name: "Character Backstory", player_name: "Alex",
+      created_at: "2025-12-31T00:00:00.000Z", updated_at: "2025-12-31T00:00:00.000Z",
+      current_question: 0, completed: false, revision: 3,
+      questions: questions("Base question copy"),
+    };
+    await new Promise((resolve, reject) => {
+      const request = indexedDB.open("runyth-born", 4);
+      request.onsuccess = () => {
+        const database = request.result;
+        const transaction = database.transaction("sessions", "readwrite");
+        transaction.objectStore("sessions").put(session);
+        transaction.oncomplete = () => { database.close(); resolve(); };
+        transaction.onerror = () => reject(transaction.error);
+      };
+      request.onerror = () => reject(request.error);
+    });
+    localStorage.setItem("runyth-born.session.v2.merged-recovery-session-01.recovery",
+      JSON.stringify({
+        id: "merged-recovery-session-01", reason: "conflict",
+        saved_at: "2025-12-31T23:00:00.000Z",
+        entries: questions("New acknowledged recovery copy"),
+      }));
+  });
+  const recoveryPage = await recovery.newPage();
+  await recoveryPage.goto(origin + fixtures[0][0] + "wizard.html?session=merged-recovery-session-01");
+  await loaded(recoveryPage);
+  await recoveryPage.locator("#review-preserved").click();
+  const recoveryEntries = await recoveryPage.locator(".orphan-entry").allTextContents();
+  assert.ok(recoveryEntries.some((entry) => entry.includes("Older recovery copy")));
+  assert.ok(recoveryEntries.some((entry) => entry.includes("New acknowledged recovery copy")), "the fallback recovery copy stays visible under clock rollback (F02)");
+  // The earlier `questions` recovery schema upgrades into the entries shape.
+  const upgrade = await recoverySeed.evaluate(async (legacyAnswer) => {
+    await new Promise((resolve, reject) => {
+      const request = indexedDB.open("runyth-born", 4);
+      request.onsuccess = () => {
+        const database = request.result;
+        const transaction = database.transaction("recoveries", "readwrite");
+        transaction.objectStore("recoveries").put({
+          id: "old-schema-recovery-01", reason: "reconcile",
+          saved_at: "2026-01-01T00:00:00.000Z",
+          questions: [{ id: "old\u001fname#1", fallback_id: "name#1", answer: legacyAnswer,
+            label: "Name", breadcrumb: [], context: [], label_ordinal: 1 }],
+        });
+        transaction.oncomplete = () => { database.close(); resolve(); };
+        transaction.onerror = () => reject(transaction.error);
+      };
+      request.onerror = () => reject(request.error);
+    });
+    const session = {
+      version: 2, id: "old-schema-recovery-01", template_id: "legacy-template",
+      template_filename: "minimal-template.mdast.json", template_fingerprint: "seed",
+      template_name: "Character Backstory", player_name: "Alex",
+      created_at: "2025-12-31T00:00:00.000Z", updated_at: "2025-12-31T00:00:00.000Z",
+      current_question: 0, completed: false, revision: 1,
+      questions: [],
+    };
+    await new Promise((resolve, reject) => {
+      const request = indexedDB.open("runyth-born", 4);
+      request.onsuccess = () => {
+        const database = request.result;
+        const transaction = database.transaction("sessions", "readwrite");
+        transaction.objectStore("sessions").put(session);
+        transaction.oncomplete = () => { database.close(); resolve(); };
+        transaction.onerror = () => reject(transaction.error);
+      };
+      request.onerror = () => reject(request.error);
+    });
+  }, "Previously preserved answer");
+  void upgrade;
+  const oldSchemaPage = await recovery.newPage();
+  await oldSchemaPage.goto(origin + fixtures[0][0] + "wizard.html?session=old-schema-recovery-01");
+  await loaded(oldSchemaPage);
+  assert.equal(await oldSchemaPage.locator("#reconcile-notice").isVisible(), true, "the prior schema recovery record surfaces for review");
+  await oldSchemaPage.locator("#review-preserved").click();
+  const oldSchemaEntries = await oldSchemaPage.locator(".orphan-entry").allTextContents();
+  assert.ok(oldSchemaEntries.some((entry) => entry.includes("Previously preserved answer")), "old-schema answers survive the upgrade (F02)");
+  await recovery.close();
+  console.log("Browser acceptance passed: recovery records merge");
 } catch (error) {
   if (activePage && !activePage.isClosed()) {
     console.error(await activePage.evaluate(() => ({ question: document.getElementById("question-number")?.textContent,

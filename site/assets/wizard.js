@@ -14,6 +14,7 @@ import {
   saveRecovery,
   saveSession,
   saveSessionPosition,
+  SessionDeletedError,
   StorageConflictError,
 } from "./storage.js";
 
@@ -279,6 +280,14 @@ function flushSave() {
       );
     })
     .catch(async (error) => {
+      if (error instanceof SessionDeletedError) {
+        // Deletion invalidates earlier writer generations (F11): the queued
+        // edit is not acknowledged and never recreates the session.
+        dirty = false;
+        setSaveStatus("Removed locally in another tab", "error");
+        showToast("This questionnaire was removed from this device; the current edits stay in this tab only.");
+        return;
+      }
       if (error instanceof StorageConflictError) {
         try {
           const recovery = await preserveRecovery(session.id, "conflict", session.questions);
