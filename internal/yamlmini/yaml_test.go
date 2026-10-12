@@ -77,3 +77,89 @@ func TestRejectsMergeKeysAndTrailingInlineJSON(t *testing.T) {
 		}
 	}
 }
+
+func TestBlockScalarHeaderAndFoldingSemantics(t *testing.T) {
+	cases := []struct {
+		name   string
+		source string
+		want   string
+	}{
+		{"explicit indentation indicator", "value: |2-\n    Indented\n    text\n", "  Indented\n  text"},
+		{"folded blank line", "value: >-\n  first\n\n  second\n", "first\nsecond"},
+		{"folded more-indented lines", "value: >-\n  first\n    nested\n  second\n", "first\n  nested\nsecond"},
+		{"comment after literal header", "value: | # note\n  first\n", "first\n"},
+		{"comment after folded header", "value: >- # note\n  first\n", "first"},
+	}
+
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			parsed, err := Parse([]byte(testCase.source))
+			if err != nil {
+				t.Fatalf("Parse() error = %v", err)
+			}
+			mapping, ok := parsed.(map[string]any)
+			if !ok {
+				t.Fatalf("root type = %T, want map[string]any", parsed)
+			}
+			if mapping["value"] != testCase.want {
+				t.Fatalf("value = %q, want %q", mapping["value"], testCase.want)
+			}
+		})
+	}
+}
+
+func TestPlainScalarWithApostropheKeepsCommentHandling(t *testing.T) {
+	parsed, err := Parse([]byte("value: don't know # note\n"))
+	if err != nil {
+		t.Fatalf("Parse() error = %v", err)
+	}
+	mapping, ok := parsed.(map[string]any)
+	if !ok {
+		t.Fatalf("root type = %T, want map[string]any", parsed)
+	}
+	if mapping["value"] != "don't know" {
+		t.Fatalf("value = %q, want %q", mapping["value"], "don't know")
+	}
+}
+
+func TestQuotedScalarsKeepCommentCharactersInsideTheScalar(t *testing.T) {
+	for source, want := range map[string]string{
+		"value: \"a # b\"\n":      "a # b",
+		"value: 'it''s # here'\n": "it's # here",
+	} {
+		parsed, err := Parse([]byte(source))
+		if err != nil {
+			t.Fatalf("Parse(%q) error = %v", source, err)
+		}
+		mapping, ok := parsed.(map[string]any)
+		if !ok {
+			t.Fatalf("root type = %T, want map[string]any", parsed)
+		}
+		if mapping["value"] != want {
+			t.Fatalf("value = %q, want %q", mapping["value"], want)
+		}
+	}
+}
+
+func TestPlainMappingKeyWithApostropheParses(t *testing.T) {
+	parsed, err := Parse([]byte("don't: 1\n"))
+	if err != nil {
+		t.Fatalf("Parse() error = %v", err)
+	}
+	mapping, ok := parsed.(map[string]any)
+	if !ok {
+		t.Fatalf("root type = %T, want map[string]any", parsed)
+	}
+	if mapping["don't"] != int64(1) {
+		t.Fatalf("value = %#v", mapping["don't"])
+	}
+}
+
+func TestBlockScalarInSequenceItemIsRejected(t *testing.T) {
+	if _, err := Parse([]byte("- |\n  x\n")); err == nil {
+		t.Fatal("accepted a block scalar inside a sequence item")
+	}
+	if _, err := Parse([]byte("- |2-\n    x\n")); err == nil {
+		t.Fatal("accepted an indented block scalar inside a sequence item")
+	}
+}

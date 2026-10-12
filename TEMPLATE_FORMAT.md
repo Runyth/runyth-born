@@ -4,6 +4,17 @@ Runyth Born reads raw mdast documents from the repository `templates/` directory
 
 The build validates templates and generates the static `dist/templates/catalog.json` and `*.compiled.json` files automatically. Only generated JSON and plain JavaScript are needed at runtime; Go is a build-time tool. A template change therefore requires a rebuild/redeployment; there is no runtime directory scan in 2.x.
 
+## Supported YAML subset
+
+The build accepts a dependency-free, JSON-compatible YAML subset. Supported:
+mappings, sequences, plain and quoted scalars, inline JSON arrays/objects,
+`|` and `>` block scalars with optional chomping indicators (`-`, `+`) and
+explicit indentation indicators (for example `|2-`). Rejected: YAML anchors,
+aliases, tags, merge keys, and tab indentation. Syntax outside the subset fails
+the build instead of being interpreted loosely; accepted forms keep their
+specified meaning, including extra indentation inside folded scalars and
+comments after block scalar headers.
+
 ## Required mdast root
 
 The top-level value must be an mdast root object with a `children` array:

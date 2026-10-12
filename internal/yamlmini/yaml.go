@@ -115,9 +115,13 @@ func (p *parser) parseSequence(indent int) ([]any, error) {
 			continue
 		}
 
+		if looksLikeBlockScalarHeader(rest) {
+			return nil, p.errorAt(p.index-1, "block scalars inside sequence items are not supported")
+		}
+
 		if key, rawValue, ok := splitMappingEntry(rest); ok {
 			item := map[string]any{}
-			if err := p.assignMappingValue(item, key, rawValue, indent+2); err != nil {
+			if err := p.assignMappingValue(item, key, rawValue, indent+2, indent+2); err != nil {
 				return nil, err
 			}
 
@@ -193,7 +197,7 @@ func (p *parser) parseMapping(indent int, initial map[string]any) (map[string]an
 		}
 
 		p.index++
-		if err := p.assignMappingValue(result, key, rawValue, indent+2); err != nil {
+		if err := p.assignMappingValue(result, key, rawValue, indent+2, indent); err != nil {
 			return nil, err
 		}
 	}
@@ -201,14 +205,14 @@ func (p *parser) parseMapping(indent int, initial map[string]any) (map[string]an
 	return result, nil
 }
 
-func (p *parser) assignMappingValue(target map[string]any, key string, rawValue string, childIndent int) error {
+func (p *parser) assignMappingValue(target map[string]any, key string, rawValue string, childIndent int, parentIndent int) error {
 	if key == "<<" {
 		return p.errorAt(max(0, p.index-1), "YAML merge keys are not supported")
 	}
 	rawValue = strings.TrimSpace(rawValue)
 
-	if isBlockScalarHeader(rawValue) {
-		value, err := p.parseBlockScalar(childIndent, rawValue)
+	if looksLikeBlockScalarHeader(rawValue) {
+		value, err := p.parseBlockScalarHeaderAndValue(childIndent, parentIndent, rawValue)
 		if err != nil {
 			return err
 		}
@@ -245,18 +249,84 @@ func (p *parser) assignMappingValue(target map[string]any, key string, rawValue 
 	return nil
 }
 
-func (p *parser) parseBlockScalar(childIndent int, header string) (string, error) {
-	style := header[0]
-	chomp := byte(0)
-	if len(header) > 1 {
-		switch header[1] {
-		case '-', '+':
-			chomp = header[1]
-		default:
-			if !unicode.IsDigit(rune(header[1])) {
-				return "", p.errorAt(max(0, p.index-1), fmt.Sprintf("unsupported block scalar header %q", header))
-			}
+func (p *parser) parseBlockScalarHeaderAndValue(childIndent int, parentIndent int, rawValue string) (string, error) {
+	header, rest := splitHeaderToken(rawValue)
+	if rest != "" && !strings.HasPrefix(rest, "#") {
+		return "", p.errorAt(max(0, p.index-1), fmt.Sprintf("unsupported block scalar header %q", rawValue))
+	}
+	chomp, explicitIndent, err := parseHeaderIndicators(header)
+	if err != nil {
+		return "", p.errorAt(max(0, p.index-1), err.Error())
+	}
+	return p.parseBlockScalar(childIndent, parentIndent, header[0], chomp, explicitIndent)
+}
+
+// splitHeaderToken splits the leading [|>] header token from a trailing
+// comment. A comment must be separated from the token by whitespace.
+func splitHeaderToken(rawValue string) (string, string) {
+	value := strings.TrimSpace(rawValue)
+	tokenEnd := len(value)
+	for index, character := range value {
+		if character == ' ' || character == '\t' {
+			tokenEnd = index
+			break
 		}
+	}
+	token := value[:tokenEnd]
+	rest := strings.TrimSpace(value[tokenEnd:])
+	return token, rest
+}
+
+// parseHeaderIndicators validates the optional chomping and indentation
+// indicators, in either order, exactly once each.
+func parseHeaderIndicators(header string) (byte, int, error) {
+	chomp := byte(0)
+	explicitIndent := 0
+	sawIndentIndicator := false
+	for _, character := range []rune(header[1:]) {
+		switch {
+		case character == '-' || character == '+':
+			if chomp != 0 {
+				return 0, 0, fmt.Errorf("duplicate chomping indicator in block scalar header %q", header)
+			}
+			chomp = byte(character)
+		case unicode.IsDigit(character):
+			if sawIndentIndicator {
+				return 0, 0, fmt.Errorf("duplicate indentation indicator in block scalar header %q", header)
+			}
+			sawIndentIndicator = true
+			explicitIndent = int(character - '0')
+		default:
+			return 0, 0, fmt.Errorf("unsupported block scalar header %q", header)
+		}
+	}
+	if sawIndentIndicator && explicitIndent == 0 {
+		return 0, 0, fmt.Errorf("unsupported block scalar header %q", header)
+	}
+	return chomp, explicitIndent, nil
+}
+
+func looksLikeBlockScalarHeader(value string) bool {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" || (trimmed[0] != '|' && trimmed[0] != '>') {
+		return false
+	}
+	token, rest := splitHeaderToken(trimmed)
+	if rest != "" && !strings.HasPrefix(rest, "#") {
+		// A plain scalar cannot start with a block scalar indicator; treat the
+		// value as an invalid header so the caller rejects it explicitly.
+		return true
+	}
+	_, _, err := parseHeaderIndicators(token)
+	return err == nil
+}
+
+func (p *parser) parseBlockScalar(childIndent int, parentIndent int, style byte, chomp byte, explicitIndent int) (string, error) {
+	bound := childIndent
+	baseIndent := 0
+	if explicitIndent > 0 {
+		baseIndent = parentIndent + explicitIndent
+		bound = baseIndent
 	}
 
 	start := p.index
@@ -272,18 +342,21 @@ func (p *parser) parseBlockScalar(childIndent int, header string) (string, error
 		if err != nil {
 			return "", p.errorAt(end, err.Error())
 		}
-		if lineIndent < childIndent {
+		if lineIndent < bound {
 			break
 		}
-		if minimumIndent == -1 || lineIndent < minimumIndent {
+		if explicitIndent == 0 && (minimumIndent == -1 || lineIndent < minimumIndent) {
 			minimumIndent = lineIndent
 		}
 		end++
 	}
 
-	if minimumIndent == -1 {
-		p.index = end
-		return "", nil
+	if explicitIndent == 0 {
+		if minimumIndent == -1 {
+			p.index = end
+			return "", nil
+		}
+		baseIndent = minimumIndent
 	}
 
 	contentLines := make([]string, 0, end-start)
@@ -293,10 +366,10 @@ func (p *parser) parseBlockScalar(childIndent int, header string) (string, error
 			contentLines = append(contentLines, "")
 			continue
 		}
-		if len(raw) < minimumIndent {
+		if len(raw) < baseIndent {
 			return "", p.errorAt(i, "invalid block scalar indentation")
 		}
-		contentLines = append(contentLines, raw[minimumIndent:])
+		contentLines = append(contentLines, raw[baseIndent:])
 	}
 	p.index = end
 
@@ -319,22 +392,39 @@ func (p *parser) parseBlockScalar(childIndent int, header string) (string, error
 	return value, nil
 }
 
+// foldLines applies the folded block scalar rules to base-indent-stripped
+// lines: a single line break between two non-blank, non-more-indented lines
+// folds to a space, blank lines keep their breaks literally, and more-indented
+// lines are never folded (F08).
 func foldLines(lines []string) string {
 	var builder strings.Builder
-	for i, line := range lines {
-		if i == 0 {
-			builder.WriteString(line)
+	pendingBlanks := 0
+	first := true
+	previousMoreIndented := false
+	for _, line := range lines {
+		if line == "" {
+			pendingBlanks++
 			continue
 		}
-		previousBlank := lines[i-1] == ""
-		currentBlank := line == ""
-		if previousBlank || currentBlank {
-			builder.WriteByte('\n')
-		} else {
-			builder.WriteByte(' ')
+		moreIndented := strings.HasPrefix(line, " ") || strings.HasPrefix(line, "\t")
+		if !first {
+			switch {
+			case pendingBlanks > 0:
+				builder.WriteString(strings.Repeat("\n", pendingBlanks))
+			case previousMoreIndented || moreIndented:
+				builder.WriteByte('\n')
+			default:
+				builder.WriteByte(' ')
+			}
+		} else if pendingBlanks > 0 {
+			builder.WriteString(strings.Repeat("\n", pendingBlanks))
 		}
 		builder.WriteString(line)
+		pendingBlanks = 0
+		previousMoreIndented = moreIndented
+		first = false
 	}
+	builder.WriteString(strings.Repeat("\n", pendingBlanks))
 	return builder.String()
 }
 
@@ -400,6 +490,7 @@ func parseScalar(raw string) (any, error) {
 func splitMappingEntry(line string) (string, string, bool) {
 	quote := rune(0)
 	escaped := false
+	seenContent := false
 	for index, character := range line {
 		if escaped {
 			escaped = false
@@ -411,13 +502,23 @@ func splitMappingEntry(line string) (string, string, bool) {
 		}
 		if quote != 0 {
 			if character == quote {
+				if character == '\'' && index+1 < len(line) && line[index+1] == '\'' {
+					escaped = true
+					continue
+				}
 				quote = 0
 			}
 			continue
 		}
-		if character == '\'' || character == '"' {
-			quote = character
-			continue
+		if !seenContent {
+			if unicode.IsSpace(firstRune(line[index:])) {
+				continue
+			}
+			seenContent = true
+			if character == '\'' || character == '"' {
+				quote = character
+				continue
+			}
 		}
 		if character == ':' {
 			remainder := line[index+1:]
@@ -450,11 +551,17 @@ func parseKey(raw string) (string, error) {
 	return raw, nil
 }
 
+// stripComment removes a trailing YAML comment. Quoted state starts only at
+// the first content character of the scalar, so plain scalars containing
+// apostrophes or quotes are not misread, and YAML doubled single quotes stay
+// inside the scalar (F08).
 func stripComment(raw string) string {
 	quote := rune(0)
 	escaped := false
+	seenContent := false
 	runes := []rune(raw)
-	for i, character := range runes {
+	for i := 0; i < len(runes); i++ {
+		character := runes[i]
 		if escaped {
 			escaped = false
 			continue
@@ -465,13 +572,23 @@ func stripComment(raw string) string {
 		}
 		if quote != 0 {
 			if character == quote {
+				if character == '\'' && i+1 < len(runes) && runes[i+1] == '\'' {
+					i++
+					continue
+				}
 				quote = 0
 			}
 			continue
 		}
-		if character == '\'' || character == '"' {
-			quote = character
-			continue
+		if !seenContent {
+			if unicode.IsSpace(character) {
+				continue
+			}
+			seenContent = true
+			if character == '\'' || character == '"' {
+				quote = character
+				continue
+			}
 		}
 		if character == '#' && (i == 0 || unicode.IsSpace(runes[i-1])) {
 			return string(runes[:i])
@@ -482,21 +599,6 @@ func stripComment(raw string) string {
 
 func isSequenceLine(content string) bool {
 	return content == "-" || strings.HasPrefix(content, "- ")
-}
-
-func isBlockScalarHeader(value string) bool {
-	if value == "" || (value[0] != '|' && value[0] != '>') {
-		return false
-	}
-	if len(value) == 1 {
-		return true
-	}
-	for _, character := range value[1:] {
-		if character != '+' && character != '-' && !unicode.IsDigit(character) {
-			return false
-		}
-	}
-	return true
 }
 
 func indentation(line string) (int, error) {
