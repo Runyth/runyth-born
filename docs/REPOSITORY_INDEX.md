@@ -1,32 +1,35 @@
 # Repository index
 
-This index describes the local version 2.0 checkout (`3e3e332` before this audit),
-not the older terminal application found through the connected GitHub account.
+This index describes the current Runyth Born static browser application.
 
 ## Build and deployment
 
 `make build` runs `scripts/build-static.sh`, which copies `site/`, publishes
-source templates, and runs `cmd/template-catalog` to produce a catalog and
-compiled JSON for each template. The build validates the finished artifact.
+source templates, publishes the licence text as `license.txt`, and runs
+`cmd/template-catalog` to produce a catalog and compiled JSON for each
+template. The build refuses output directories that overlap tracked source and
+validates the finished artifact.
 
-Go is only a build-time tool. The deployed `dist/` contains HTML, CSS, JavaScript,
-JSON, and text files. It contains no Go executable, WebAssembly, runtime shim,
-API, database, or server configuration.
+Go is only a build-time tool, pinned by the `toolchain` directive in `go.mod`.
+The deployed `dist/` contains HTML, CSS, JavaScript, JSON, and text files. It
+contains no Go executable, WebAssembly, runtime shim, API, database, or server
+configuration.
 
 `.github/workflows/pages.yml` validates, builds, browser-tests, uploads `dist/`,
-and deploys through the official Pages actions. The repository's Pages source
-must be set to GitHub Actions. Its configured base path is used for deep 404
-recovery; ordinary application URLs and module imports are relative.
+and deploys through official Pages actions pinned to commit SHAs. The
+repository's Pages source must be set to GitHub Actions. Its configured base
+path is used for deep 404 recovery; ordinary application URLs and module
+imports are relative.
 
 ## Source map
 
 | Location | Responsibility |
 |---|---|
 | `site/index.html`, `site/assets/home.js` | Catalog cards, new sessions, recent sessions |
-| `site/wizard.html`, `site/assets/wizard.js` | Questions, section navigation, progress, autosave scheduling, completion, downloads |
-| `site/assets/runtime.js` | Plain JavaScript reconciliation, section counts, escaped answer insertion into compiled Markdown slots |
-| `site/assets/storage.js` | Session creation, cryptographic IDs, IndexedDB commit confirmation, localStorage fallback |
-| `site/assets/portable.js` | Bounded gzip/JSON resume snapshots, URL-fragment encoding/import |
+| `site/wizard.html`, `site/assets/wizard.js` | Questions, section navigation, progress, autosave scheduling, conflict handling, preserved-answer review, completion, downloads, delete control |
+| `site/assets/runtime.js` | Plain JavaScript reconciliation with match diagnostics, section counts, escaped answer insertion into compiled Markdown slots |
+| `site/assets/storage.js` | Session creation, cryptographic IDs, revision-guarded saves, navigation position store, recovery records, legacy-namespace migration, localStorage fallback, deletion |
+| `site/assets/portable.js` | Bounded gzip/JSON resume snapshots with save revisions, URL-fragment encoding/import |
 | `site/assets/app.css` | Responsive layout and UI styling |
 | `site/404.html` | Deployment-aware recovery from missing URLs |
 | `templates/`, `examples/` | Published inputs and authoring examples |
@@ -34,14 +37,17 @@ recovery; ordinary application URLs and module imports are relative.
 | `internal/staticapp/compile.go` | Precomputed Markdown layout and multiline answer slots |
 | `internal/staticapp/core.go` | Build-time template analysis and section metadata |
 | `internal/mdast/` | JSON/YAML loading, question discovery, IDs, merging, fingerprints |
-| `internal/markdown/` | Canonical mdast Markdown rendering |
-| `internal/yamlmini/` | Dependency-free JSON-compatible YAML subset |
+| `internal/markdown/` | Canonical mdast Markdown rendering with literal-text escaping |
+| `internal/yamlmini/` | Dependency-free JSON-compatible YAML subset with block scalar support |
 | `scripts/check.sh` | Formatting, race tests, vet, JS tests/syntax, build and artifact smoke checks |
+| `scripts/build-static.sh` | Static build with tracked-source output protection |
 | `scripts/validate-static.py` | Artifact references, compiled slots, catalog parity, no server/Go/WASM assets |
-| `scripts/package-release.sh` | Source/history, deployable runtime, and documentation ZIPs |
-| `tests/js/` | Storage, resume, reconciliation regressions and artifact smoke tests |
+| `scripts/package-release.sh` | Provenance checks, history scan, three release ZIPs, archive verification, checksums |
+| `scripts/check-release-tag.sh` | Release tag/VERSION agreement guard |
+| `scripts/scan-source-history.sh` | Representative credential scan over reachable Git objects |
+| `tests/js/` | Storage, resume, reconciliation, build-guard, release-tag, and Markdown fidelity regressions plus artifact smoke tests |
 | `tests/browser/smoke.mjs` | Chromium acceptance of unchanged root/project artifacts, or the actual deployment via `LIVE_SITE_URL` |
-| `package.json`, `package-lock.json` | Pinned development-only browser testing dependency |
+| `package.json`, `package-lock.json` | Pinned development-only browser testing and Markdown validation dependencies |
 
 ## Data flow
 
