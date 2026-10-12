@@ -19,14 +19,15 @@ The gate verifies:
 - `go test -race ./...`;
 - `go vet ./...`;
 - JavaScript syntax;
-- Node.js unit tests for shared save authority across both storage copies, recovery visibility, fallback-only migration, deletion across migration boundaries, divergent-branch imports, queued save conflicts, session/resume encoding, build-output guards including symlinked checkouts, release-tag agreement, and Markdown fidelity;
+- Node.js unit tests for shared save authority across both storage copies, tied-copy preservation of real question answers, recovery records from both stores with prior-schema upgrades and merged clock-rollback branches, fallback-only migration, deletion across migration boundaries, tombstoned identifiers that block queued saves and re-migration, divergent-branch imports, queued save conflicts, session/resume encoding, build-output guards including symlinked checkouts, release-tag agreement, block scalar scalar semantics, and Markdown fidelity;
 - a complete static build;
 - plain JavaScript reconciliation/rendering against every published template;
 - generated template catalog integrity;
 - HTML local-asset references and the published licence text;
 - absence of Go/Docker/server deployment files from the runtime artifact;
 - absence of WebAssembly and `wasm_exec.js`;
-- generated answer-slot integrity and local JavaScript module imports.
+- generated answer-slot integrity and local JavaScript module imports;
+- release-guard canaries (`scripts/test-release-guards.sh`), which run the real packaging in disposable clones against fictional canaries for tracked content, commit messages, tag messages, binary blobs, dangling stored blobs, author headers, hidden index tricks, and ignored bundle inputs.
 
 ## Automated browser acceptance
 
@@ -36,7 +37,7 @@ npx playwright install chromium
 make browser-check
 ```
 
-Chromium checks root and project paths, local reload/resume, touch navigation, cleared answers, literal Markdown downloads, completion, portable import in a fresh browser context, localStorage fallback, missing sessions, and nested 404 recovery. It also covers stale-tab protection (navigation and divergent edits cannot overwrite newer acknowledged answers), cross-store authority (a stale primary write is rejected while a newer acknowledged fallback save exists), revision-ordered imports under clock skew with divergent branches preserved in every direction and reviewable through the import choice, serialized single-tab saves without false conflicts, legacy `template-wizard-web` session migration from both the legacy database and legacy fallback keys with originals kept, and deletion of migrated questionnaires that also removes the legacy copies so they cannot return. Runtime requests must be GETs for same-origin static files. CI runs these checks before changes can pass validation.
+Chromium checks root and project paths, local reload/resume, touch navigation, cleared answers, literal Markdown downloads, completion, portable import in a fresh browser context, localStorage fallback, missing sessions, and nested 404 recovery. It also covers stale-tab protection (navigation and divergent edits cannot overwrite newer acknowledged answers), cross-store authority (a stale primary write is rejected while a newer acknowledged fallback save exists), revision-ordered imports under clock skew with divergent branches preserved in every direction and reviewable through the import choice, serialized single-tab saves without false conflicts, legacy `template-wizard-web` session migration from both the legacy database and legacy fallback keys with originals kept, deletion of migrated questionnaires that also removes the legacy copies so they cannot return, deletion that invalidates a queued save from a second tab, tied divergent session copies whose unselected real question answers stay reviewable across saves and reloads, and review availability of recovery records from both stores and prior schemas. Runtime requests must be GETs for same-origin static files. CI runs these checks before changes can pass validation.
 
 ## Release packaging
 
@@ -47,7 +48,7 @@ npm ci
 make package
 ```
 
-Packaging refuses a workspace with uncommitted or untracked changes, scans every reachable Git object, commit message, and annotated tag message for representative credential and private-content patterns with redacted diagnostics, and verifies the archives after creation: the source archive is extracted to confirm Git object integrity, a project inventory exactly matching the committed tree (ignored and untracked workspace files are never shipped), the packaged revision, credential-free Git configuration, and redacted privacy scanning; the runtime archive must match the built `dist/`, and the documentation inventory is checked. The release workflow additionally refuses a tag that does not exactly match `v${VERSION}` or that does not resolve to the packaged commit.
+Packaging refuses a workspace with uncommitted or untracked changes and packages an exact committed snapshot: the staged tree ships only committed files (untracked and ignored workspace files are excluded from every archive), its files are verified byte for byte and mode for mode against the packaged revision before anything is built, and the Runtime and Documentation bundles are built from the same staged snapshot. The privacy scan decodes every stored Git object — reachable or not, including binary payloads, commit headers, tag bodies, and tree entries — plus the plain Git support files, and reports matches only as redacted classifications and object identities. After archiving, the actual Source ZIP is extracted with the shipped file modes restored and re-verified: Git object integrity, project inventory exactly matching the committed tree, byte and mode agreement with the packaged revision, the packaged commit, credential-free Git configuration, and a repeated redacted privacy scan. The runtime archive must match the built `dist/` byte for byte and the documentation archive must match the committed documentation files. The release workflow additionally refuses a tag that does not exactly match `v${VERSION}` or that does not resolve to the packaged commit.
 
 Expected artifacts:
 

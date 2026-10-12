@@ -39,6 +39,14 @@ Deployment preparation continued on 2026-10-05.
 | Portable branches with lower local revisions were silently dropped | Preserve every divergent branch regardless of revision counter and offer review or import for imported copies. |
 | One tab falsely conflicted with its own serialized saves | Carry the acknowledged revision into queued snapshots at execution time. |
 | The renderer regression silently skipped in dependency-free gates | Install dependencies before the gates and fail loudly when the validator is unavailable. |
+| Tied divergent session copies tested only a synthetic top-level answer field | Extract the unselected record's real `questions` entries, await the preservation, and test with plain persisted-session fixtures. |
+| Prior recovery schemas and clock-rolled-back copies were ignored or replaced | Normalize both recovery shapes, merge entries across both stores, and let writes carry the union so upgrades never lose answers. |
+| A save queued before deletion could recreate the removed session | Publish deletion markers holding only the ID and time in both stores, re-checked by every save, migration skip, transaction, and fallback write. |
+| Block scalars still differed from reference parsers on explicit depth, EOF, spaces, and indicators | Replay the reference scanner semantics: physical line-break records, scan-depth fixed by the indicator, significant-space blanks, ASCII 1–9 indicators, and rejected structural tabs. |
+| The scanner skipped binary objects, write-only blobs, and commit headers | Decode every stored object reachable from the object database with redacted object-level diagnostics. |
+| Ignored inputs leaked into Runtime and Documentation archives | Build every bundle from the staged committed snapshot instead of the working tree. |
+| Byte/mode verification could be bypassed through hidden index state | Compare each tracked file's disk bytes and mode with the packaged commit directly. |
+| ZIP extraction dropped the shipped file modes | Restore the archived modes during verification. |
 
 ## Three verification layers
 

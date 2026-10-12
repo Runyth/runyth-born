@@ -16,9 +16,9 @@ Autosave data stays in the browser:
 
 Saves are acknowledged only after the storage transaction commits, and every saved copy carries a monotonic revision. Authority is established across both storage copies: a copy with a lower revision than the newest acknowledged save anywhere is rejected instead of silently overwriting newer answers, so a stale second tab cannot destroy newer work merely by navigating, a recovered IndexedDB store cannot bury a newer acknowledged fallback save, and clock differences cannot make an older copy win.
 
-Preserved copies (answers that no longer match a template, divergent portable imports in any revision direction, rejected conflicting edits, and divergent storage copies) are stored separately under a recovery record and stay available for review; the review dialog can copy, discard, or — for imported copies — apply the preserved answers. The review copy is readable from both storage backends after a primary-store recovery.
+Preserved copies (answers that no longer match a template, divergent portable imports in any revision direction, rejected conflicting edits, and divergent storage copies) are stored separately under a recovery record and stay available for review; the review dialog can copy, discard, or — for imported copies — apply the preserved answers. Both storage copies are consulted and merged: prior recovery schemas are upgraded, identical answers collapse, and copies acknowledged at different times or under a rolled-back clock stay side by side instead of one being discarded silently.
 
-The finish dialog offers a confirmed **Delete local copy** action that removes the session, its navigation position, the recovery record, and every copy left by the legacy migration from this browser, so a deleted questionnaire does not return on the next open. There is no automatic retention limit or central backup; on shared browser profiles, users who need to remove questionnaire data should use the delete control or the browser's site-data clearing.
+The finish dialog offers a confirmed **Delete local copy** action that removes the session, its navigation position, the recovery record, and every copy left by the legacy migration from this browser, so a deleted questionnaire does not return on the next open. Deletion first writes a marker that holds only the identifier and the deletion time into both storage copies, and every save and migration re-checks that marker, so an already-queued writer in any tab is rejected instead of recreating the removed session. There is no automatic retention limit or central backup; on shared browser profiles, users who need to remove questionnaire data should use the delete control or the browser's site-data clearing.
 
 Browsers may terminate a page before a debounced autosave completes. The most recent acknowledged **Saved locally** status, portable snapshots, and downloaded files are the recovery checkpoints, not every keystroke.
 
@@ -57,6 +57,12 @@ The wizard policy requires only same-origin scripts; it does not permit evaluati
 Runtime application assets are repository JavaScript and generated JSON. Go is used only as a build-time template compiler. Playwright is a development-only browser-test dependency and is excluded from deployment and release runtime bundles. There is no CDN or third-party runtime code.
 
 GitHub Actions workflows use least-purpose permissions. Checkout is configured with `persist-credentials: false`; release packaging therefore does not capture an Actions token inside the requested `.git` source archive.
+
+## Release packaging
+
+Release artifacts are built from an exact committed snapshot. The staging tree is verified byte for byte and mode for mode against the packaged commit before anything ships, so hidden index state cannot substitute altered content, and the Runtime and Documentation bundles are built from the same staged snapshot so untracked or ignored inputs never leak into any archive. Runtime entries are compared byte for byte with the built output and Documentation entries with the committed files.
+
+Every stored Git object of the packaged repository — reachable or not, including binary payloads, commit headers, tag bodies, and tree entries — is decoded and pattern-scanned, and the shipped plain Git files keep their scan; canary cases for all of these run as a required integrated check. Diagnostics are redacted to classification, object identity, and location, so detected values never reach the log. The actual published Source ZIP is extracted with shipped file modes restored, and its objects, inventory, revision, byte/mode match with the commit, and Git configuration are verified again.
 
 ## Input handling
 
