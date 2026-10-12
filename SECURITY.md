@@ -14,7 +14,21 @@ Autosave data stays in the browser:
 - `localStorage` is a compatibility fallback;
 - no answer is intentionally transmitted to the static host by application code.
 
+Saves are acknowledged only after the storage transaction commits, and every saved copy carries a monotonic revision. A copy with a lower revision than the stored record is rejected instead of silently overwriting newer answers, so a stale second tab cannot destroy newer work merely by navigating, and clock differences cannot make an older copy win.
+
+Preserved copies (answers that no longer match a template, divergent portable imports, rejected conflicting edits) are stored separately under a recovery record and stay available for review; the review dialog can copy or discard them.
+
+The finish dialog offers a confirmed **Delete local copy** action that removes the session, its navigation position, and the recovery record from this browser. There is no automatic retention limit or central backup; on shared browser profiles, users who need to remove questionnaire data should use the delete control or the browser's site-data clearing.
+
+Browsers may terminate a page before a debounced autosave completes. The most recent acknowledged **Saved locally** status, portable snapshots, and downloaded files are the recovery checkpoints, not every keystroke.
+
 Browser extensions, compromised devices, browser profile access, or shared OS accounts can still expose locally stored data.
+
+## Browser-origin trust and hosting
+
+IndexedDB, `localStorage`, and browser storage are isolated per origin, not per path. GitHub Pages project sites under one hostname share a browser origin, so another project on the same origin can read these answer stores if its code is untrusted or compromised, and a Content Security Policy of `'self'` does not separate sibling projects. Two copies of this application on one origin also share their session stores.
+
+When questionnaire confidentiality must be isolated from sibling sites, deploy to a dedicated origin. All code served from the chosen origin must be trusted; a deployment namespace or subpath reduces accidental collisions but creates no security boundary.
 
 ## Portable resume links
 
@@ -34,7 +48,7 @@ GitHub Pages is a static publishing service, not an authentication boundary. If 
 
 ## Browser policy
 
-The HTML pages include a restrictive Content Security Policy meta policy, `no-referrer`, and no third-party runtime assets. A static HTML meta policy cannot express every response-header security control; hosts that support custom security headers may additionally enforce them at the HTTP layer.
+The HTML pages include a restrictive Content Security Policy meta policy, `no-referrer`, and no third-party runtime assets. A static HTML meta policy cannot express every response-header security control; hosts that support custom security headers may additionally enforce them at the HTTP layer, including `frame-ancestors` if embedding is undesirable.
 
 The wizard policy requires only same-origin scripts; it does not permit evaluation or WebAssembly compilation.
 
@@ -54,4 +68,6 @@ The browser textarea retains the existing 65,536-character per-answer limit. The
 
 ## Reporting
 
-Do not disclose real questionnaire answers, portable resume URLs, repository secrets, or CI credentials in a public report. Report security issues privately to the repository owner.
+Do not disclose real questionnaire answers, portable resume URLs, repository secrets, or CI credentials in a public report.
+
+Report security issues privately through GitHub private vulnerability reporting on this repository when it is available. If the reporting feature is unavailable, contact the maintainer privately by email: Daniel Braniewski [akki@ik.me](mailto:akki@ik.me).

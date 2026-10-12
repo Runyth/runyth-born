@@ -142,6 +142,7 @@ Commit the generated mdast file to `templates/`. See [TEMPLATE_FORMAT.md](TEMPLA
 6. Use **Copy resume link** when a portable cross-device snapshot is needed.
 7. Download the current Markdown at any time, or use **Finish and download** on completion.
 8. Send the Markdown file to the Dungeon Master.
+9. Optionally use **Delete local copy** in the finish dialog to remove the questionnaire from this browser.
 
 ## Saving and resume links
 

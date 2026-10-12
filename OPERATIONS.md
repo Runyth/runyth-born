@@ -47,6 +47,8 @@ Publish the contents of `dist/` as the document root. Only ordinary HTML, CSS, J
 
 For a deployment below a project path, build with `SITE_BASE_PATH=/project-name make build`. This configures the custom 404 page to return to the correct homepage even from a deeply nested missing URL. The Pages workflow obtains this path from `actions/configure-pages`; normal pages use relative URLs.
 
+Browser storage is isolated per origin, not per path: sibling projects on the same host share the origin. When questionnaire confidentiality must be isolated, publish to a dedicated origin. See `SECURITY.md` for the origin-trust model.
+
 Do not deploy the repository root as the document root. Deploy `dist/` or the `*-run.zip` contents.
 
 ## Template changes
