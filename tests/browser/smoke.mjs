@@ -228,6 +228,18 @@ try {
   await loaded(older);
   assert.equal(await older.locator("#answer").inputValue(), "Newer imported answer");
 
+  // A lower-revision divergent branch is preserved and reviewable, never
+  // silently dropped because its per-device counter is smaller (F10).
+  const lowerLink = await craftLink(1, "Divergent branch answer from device B");
+  const lower = await clocks.newPage();
+  await lower.goto(lowerLink);
+  await loaded(lower);
+  assert.equal(await lower.locator("#answer").inputValue(), "Newer imported answer");
+  assert.equal(await lower.locator("#reconcile-notice").isVisible(), true);
+  await lower.locator("#review-preserved").click();
+  assert.ok((await lower.locator(".orphan-entry").count()) >= 1, "the preserved branch is listed for review");
+  assert.equal(await lower.locator("#orphan-import").isVisible(), true, "imported copies offer the import choice");
+
   const divergentLink = await craftLink(10000, "Stale imported answer");
   const divergent = await clocks.newPage();
   await divergent.goto(divergentLink);
@@ -306,6 +318,111 @@ try {
   assert.equal(await cleanupPage.locator("#recent-section").isVisible(), false);
   await cleanup.close();
   console.log("Browser acceptance passed: delete local copy");
+
+  // Serialized single-tab saves never conflict with their own predecessor
+  // (F09), even when navigation or blur queues saves ahead of the debounce.
+  const serial = await browser.newContext({ hasTouch: true, viewport: { width: 390, height: 844 } });
+  const serialPage = await serial.newPage();
+  await serialPage.goto(origin + fixtures[0][0]);
+  await serialPage.locator(".start-form input").first().fill("Alex");
+  await serialPage.locator(".start-form button").first().click();
+  await loaded(serialPage);
+  await serialPage.locator("#answer").fill("Immediate next answer");
+  await serialPage.locator("#next-question").tap();
+  await serialPage.waitForFunction(() => document.getElementById("question-number").textContent.startsWith("Question 2 "));
+  await serialPage.locator("#previous-question").tap();
+  await serialPage.waitForFunction(() => document.getElementById("question-number").textContent.startsWith("Question 1 "));
+  await serialPage.locator("#answer").fill("First single-tab edit");
+  await serialPage.locator("#answer").blur();
+  await serialPage.locator("#answer").fill("Latest single-tab edit");
+  await serialPage.waitForFunction(() => document.getElementById("save-status").textContent === "Saved locally");
+  await serialPage.reload();
+  await loaded(serialPage);
+  assert.equal(await serialPage.locator("#answer").inputValue(), "Latest single-tab edit");
+  await serial.close();
+  console.log("Browser acceptance passed: serialized saves");
+
+  // Deleting a migrated questionnaire also removes its legacy copies, so it
+  // cannot return through a re-migration (F11).
+  const migrated = await browser.newContext({ hasTouch: true, viewport: { width: 390, height: 844 } });
+  const seedPage = await migrated.newPage();
+  await seedPage.goto(origin + fixtures[0][0]);
+  await seedPage.evaluate(async () => {
+    const now = new Date().toISOString();
+    const session = {
+      version: 2, id: "legacy-delete-session-01", template_id: "legacy-template",
+      template_filename: "minimal-template.mdast.json", template_fingerprint: "legacy",
+      template_name: "Character Backstory", player_name: "Alex", created_at: now, updated_at: now,
+      current_question: 0, completed: false,
+      questions: [{ id: "legacy\u001fname#1", fallback_id: "name#1", answer: "Saved before project rename",
+        label: "Name", breadcrumb: ["Character Backstory", "Core"], context: [], label_ordinal: 1 }],
+    };
+    await new Promise((resolve, reject) => {
+      const request = indexedDB.open("template-wizard-web", 2);
+      request.onupgradeneeded = () => {
+        const database = request.result;
+        if (!database.objectStoreNames.contains("sessions")) {
+          database.createObjectStore("sessions", { keyPath: "id" });
+        }
+      };
+      request.onsuccess = () => {
+        const database = request.result;
+        const transaction = database.transaction("sessions", "readwrite");
+        transaction.objectStore("sessions").put(session);
+        transaction.oncomplete = () => { database.close(); resolve(); };
+        transaction.onerror = () => reject(transaction.error);
+      };
+      request.onerror = () => reject(request.error);
+    });
+  });
+  const wizardPage = await migrated.newPage();
+  await wizardPage.goto(origin + fixtures[0][0] + "wizard.html?session=legacy-delete-session-01");
+  await loaded(wizardPage);
+  assert.equal(await wizardPage.locator("#answer").inputValue(), "Saved before project rename");
+  await wizardPage.locator("#answer").fill("Migrated answer");
+  await wizardPage.waitForFunction(() => document.getElementById("save-status").textContent === "Saved locally");
+  await wizardPage.locator("#finish-download").click();
+  await wizardPage.waitForFunction(() => document.getElementById("finish-dialog").open);
+  await wizardPage.locator("#finish-delete").click();
+  assert.equal(await wizardPage.locator("#finish-delete").textContent(), "Confirm delete");
+  await wizardPage.locator("#finish-delete").click();
+  await wizardPage.waitForURL(/index\.html$/u);
+  await wizardPage.goto(origin + fixtures[0][0]);
+  await wizardPage.locator("#template-grid").waitFor();
+  assert.equal(await wizardPage.locator("#recent-section").isVisible(), false, "the migrated questionnaire must not return");
+  const cleared = await wizardPage.evaluate(async () => {
+    const legacyKeys = [];
+    for (let index = 0; index < localStorage.length; index += 1) {
+      const key = localStorage.key(index);
+      if (key?.startsWith("template-wizard-web.session.v2.")) {
+        legacyKeys.push(key);
+      }
+    }
+    let legacyRecords = 0;
+    try {
+      const databases = await indexedDB.databases();
+      if (databases.some((entry) => entry?.name === "template-wizard-web")) {
+        const database = await new Promise((resolve, reject) => {
+          const open = indexedDB.open("template-wizard-web");
+          open.onsuccess = () => resolve(open.result);
+          open.onerror = () => reject(open.error);
+        });
+        const records = await new Promise((resolve, reject) => {
+          const transaction = database.transaction("sessions", "readonly");
+          const request = transaction.objectStore("sessions").getAll();
+          request.onsuccess = () => resolve(request.result || []);
+          request.onerror = () => reject(request.error);
+        });
+        legacyRecords = records.length;
+        database.close();
+      }
+    } catch { /* The legacy database may be absent. */ }
+    return { legacyKeys, legacyRecords };
+  });
+  assert.equal(cleared.legacyKeys.length, 0, "legacy fallback copies of the deleted questionnaire must be gone");
+  assert.equal(cleared.legacyRecords, 0, "legacy database copies of the deleted questionnaire must be gone");
+  await migrated.close();
+  console.log("Browser acceptance passed: migrated deletion");
 } catch (error) {
   if (activePage && !activePage.isClosed()) {
     console.error(await activePage.evaluate(() => ({ question: document.getElementById("question-number")?.textContent,
