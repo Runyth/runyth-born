@@ -641,6 +641,122 @@ try {
   assert.ok(oldSchemaEntries.some((entry) => entry.includes("Previously preserved answer")), "old-schema answers survive the upgrade (F02)");
   await recovery.close();
   console.log("Browser acceptance passed: recovery records merge");
+
+  // Concurrent recovery writers merge instead of replacing each other's
+  // acknowledged additions (F02); native scheduling decides the ordering.
+  const concurrent = await browser.newContext({ hasTouch: true, viewport: { width: 390, height: 844 } });
+  const concurrentSeed = await concurrent.newPage();
+  await concurrentSeed.goto(origin + fixtures[0][0]);
+  await concurrentSeed.evaluate(async () => {
+    const questions = (answer) => [{ id: "race\u001fname#1", fallback_id: "name#1", answer, label: "Name", breadcrumb: [], context: [], label_ordinal: 1 }];
+    const session = {
+      version: 2, id: "concurrent-recovery-01", template_id: "legacy-template",
+      template_filename: "minimal-template.mdast.json", template_fingerprint: "seed",
+      template_name: "Character Backstory", player_name: "Alex",
+      created_at: "2025-12-31T00:00:00.000Z", updated_at: "2025-12-31T00:00:00.000Z",
+      current_question: 0, completed: false, revision: 4,
+      questions: questions("Local tab copy"),
+    };
+    await new Promise((resolve, reject) => {
+      const request = indexedDB.open("runyth-born", 4);
+      request.onupgradeneeded = () => {
+        const database = request.result;
+        for (const store of ["sessions", "positions", "recoveries", "deleted"]) {
+          if (!database.objectStoreNames.contains(store)) {
+            database.createObjectStore(store, { keyPath: "id" });
+          }
+        }
+      };
+      request.onsuccess = () => {
+        const database = request.result;
+        const transaction = database.transaction("sessions", "readwrite");
+        transaction.objectStore("sessions").put(session);
+        transaction.oncomplete = () => { database.close(); resolve(); };
+        transaction.onerror = () => reject(transaction.error);
+      };
+      request.onerror = () => reject(request.error);
+    });
+    await Promise.all([
+      (async () => {
+        const storage = await import("./assets/storage.js");
+        await storage.saveRecovery("concurrent-recovery-01",
+          { reason: "conflict", entries: questions("Rejected edit from tab A") });
+      })(),
+      (async () => {
+        const storage = await import("./assets/storage.js");
+        await storage.saveRecovery("concurrent-recovery-01",
+          { reason: "conflict", entries: questions("Rejected edit from tab B") });
+      })(),
+    ]);
+  });
+  const concurrentPage = await concurrent.newPage();
+  await concurrentPage.goto(origin + fixtures[0][0] + "wizard.html?session=concurrent-recovery-01");
+  await loaded(concurrentPage);
+  await concurrentPage.locator("#review-preserved").click();
+  const simultaneousEntries = await concurrentPage.locator(".orphan-entry").allTextContents();
+  assert.ok(simultaneousEntries.some((entry) => entry.includes("Rejected edit from tab A")), "tab A's acknowledged entry must survive concurrent writers");
+  assert.ok(simultaneousEntries.some((entry) => entry.includes("Rejected edit from tab B")), "tab B's acknowledged entry must survive concurrent writers");
+  await concurrent.close();
+  console.log("Browser acceptance passed: concurrent recovery writes");
+
+  // A recovery write begun before the deletion cannot repopulate a removed
+  // questionnaire (F11): the write and the deletion race natively inside the
+  // browser, and either order leaves no preserved answers.
+  const race = await browser.newContext({ hasTouch: true, viewport: { width: 390, height: 844 } });
+  const raceSeed = await race.newPage();
+  await raceSeed.goto(origin + fixtures[0][0]);
+  await raceSeed.evaluate(async () => {
+    const questions = (answer) => [{ id: "race\u001fname#1", fallback_id: "name#1", answer, label: "Name", breadcrumb: [], context: [], label_ordinal: 1 }];
+    const session = {
+      version: 2, id: "recovery-delete-race-01", template_id: "legacy-template",
+      template_filename: "minimal-template.mdast.json", template_fingerprint: "seed",
+      template_name: "Character Backstory", player_name: "Alex",
+      created_at: "2025-12-31T00:00:00.000Z", updated_at: "2025-12-31T00:00:00.000Z",
+      current_question: 0, completed: false, revision: 2,
+      questions: questions("Race session answer"),
+    };
+    await new Promise((resolve, reject) => {
+      const request = indexedDB.open("runyth-born", 4);
+      request.onupgradeneeded = () => {
+        const database = request.result;
+        for (const store of ["sessions", "positions", "recoveries", "deleted"]) {
+          if (!database.objectStoreNames.contains(store)) {
+            database.createObjectStore(store, { keyPath: "id" });
+          }
+        }
+      };
+      request.onsuccess = () => {
+        const database = request.result;
+        const transaction = database.transaction("sessions", "readwrite");
+        transaction.objectStore("sessions").put(session);
+        transaction.oncomplete = () => { database.close(); resolve(); };
+        transaction.onerror = () => reject(transaction.error);
+      };
+      request.onerror = () => reject(request.error);
+    });
+  });
+  const raceOutcome = await raceSeed.evaluate(async () => {
+    const storage = await import("./assets/storage.js");
+    const entries = [{ id: "", fallback_id: "name#1", label: "Name", breadcrumb: [], answer: "Private recovery queued before deletion" }];
+    const [write, deletion] = await Promise.allSettled([
+      storage.saveRecovery("recovery-delete-race-01", { reason: "conflict", entries }),
+      storage.deleteSession("recovery-delete-race-01"),
+    ]);
+    return {
+      writeRejected: write.status === "rejected" && write.reason?.name === "SessionDeletedError",
+      deletionSettled: deletion.status === "fulfilled" || deletion.status === "rejected",
+      recovery: await storage.loadRecovery("recovery-delete-race-01"),
+      loaded: await storage.loadSession("recovery-delete-race-01"),
+      recent: (await storage.listRecentSessions(10)).map((entry) => entry.id),
+    };
+  });
+  assert.equal(raceOutcome.recovery, null, "no preserved answers may survive a completed deletion");
+  assert.equal(raceOutcome.loaded, null, "the deleted session must not return");
+  assert.ok(!raceOutcome.recent.includes("recovery-delete-race-01"), "the deleted questionnaire must not be listed");
+  void raceOutcome.writeRejected;
+  void raceOutcome.deletionSettled;
+  await race.close();
+  console.log("Browser acceptance passed: recovery-delete race");
 } catch (error) {
   if (activePage && !activePage.isClosed()) {
     console.error(await activePage.evaluate(() => ({ question: document.getElementById("question-number")?.textContent,

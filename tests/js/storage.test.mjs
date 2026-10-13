@@ -563,3 +563,106 @@ test("migration leaves existing new-namespace records untouched", async () => {
   assert.equal(mock.stores.get("sessions").get("shared").revision, 7);
   assert.equal(mock.stores.get("sessions").get("shared").answer, "newer");
 });
+
+test("concurrent recovery writes keep every acknowledged entry", async () => {
+  for (let round = 0; round < 5; round += 1) {
+    const mock = await autoStorageMock();
+    await Promise.all([
+      mock.module.saveRecovery("test", { reason: "conflict", entries: [{ label: "Name", answer: "Rejected edit from tab A" }] }),
+      mock.module.saveRecovery("test", { reason: "conflict", entries: [{ label: "Name", answer: "Rejected edit from tab B" }] }),
+    ]);
+    const loaded = await mock.module.loadRecovery("test");
+    assert.ok(loaded.entries.some((entry) => entry.answer === "Rejected edit from tab A"), `round ${round}: tab A's acknowledged entry was lost`);
+    assert.ok(loaded.entries.some((entry) => entry.answer === "Rejected edit from tab B"), `round ${round}: tab B's acknowledged entry was lost`);
+  }
+});
+
+test("a recovery write that read stale state re-merges before conceding", async () => {
+  const mock = await autoStorageMock();
+  // Seed a base record so both writers stack on top of existing entries.
+  await mock.module.saveRecovery("test", { reason: "reconcile", entries: [{ label: "Name", answer: "Base preserved answer" }] });
+  await Promise.all([
+    mock.module.saveRecovery("test", { reason: "conflict", entries: [{ label: "Age", answer: "Rejected edit from tab A" }] }),
+    mock.module.saveRecovery("test", { reason: "import", entries: [{ label: "Age", answer: "Rejected edit from tab B" }] }),
+  ]);
+  const loaded = await mock.module.loadRecovery("test");
+  for (const answer of ["Base preserved answer", "Rejected edit from tab A", "Rejected edit from tab B"]) {
+    assert.ok(loaded.entries.some((entry) => entry.answer === answer), `${answer} must survive concurrent writers`);
+  }
+});
+
+test("a recovery write after deletion is rejected and stores nothing", async () => {
+  const mock = await autoStorageMock({ storedSessions: [{ id: "test", revision: 1 }] });
+  const outcome = await Promise.allSettled([
+    mock.module.saveRecovery("test", { reason: "conflict", entries: [{ label: "Name", answer: "Private recovery queued before deletion" }] }),
+    mock.module.deleteSession("test"),
+  ]);
+  // Either order must leave no recovery content behind (F11).
+  const rejected = outcome.some((entry) => entry.status === "rejected" && entry.reason?.name === "SessionDeletedError");
+  assert.equal(rejected, true, "the recovery write must not acknowledge after deletion");
+  assert.equal(await mock.module.loadRecovery("test"), null, "the deleted questionnaire must not retain preserved answers");
+  const recoveries = mock.stores.get("recoveries");
+  assert.equal(recoveries ? recoveries.size : 0, 0, "no recovery record survives a completed deletion");
+});
+
+test("a fallback recovery write after deletion is rejected", async () => {
+  const mock = await autoStorageMock({ noIndexedDB: true, legacySessions: [] });
+  mock.fallback.set(sessionKey + "test.deleted", JSON.stringify({ id: "test", deleted_at: new Date().toISOString() }));
+  await assert.rejects(
+    () => mock.module.saveRecovery("test", { reason: "conflict", entries: [{ label: "Name", answer: "Late preservation" }] }),
+    (error) => error.name === "SessionDeletedError",
+  );
+  assert.equal(mock.fallback.has(sessionKey + "test.recovery"), false);
+});
+
+test("deletion retries the marker after freeing fallback space and blocks stale writers", async () => {
+  const mock = await autoStorageMock({ noIndexedDB: true, legacySessions: [] });
+  // Emulate native fractional quota pressure: the marker write fails while
+  // the fallback record still occupies its space, and succeeds after the
+  // removal freed it, exactly like a real QuotaExceededError window (F11).
+  const sessionRecord = { id: "test", revision: 1, questions: [], template_name: "Example" };
+  mock.fallback.set(sessionKey + "test", JSON.stringify(sessionRecord));
+  const plainSetItem = globalThis.localStorage.setItem.bind(globalThis.localStorage);
+  const occupied = () => [...mock.fallback.keys()].some((key) =>
+    key.startsWith(sessionKey) && !key.endsWith(".deleted") && !key.endsWith(".recovery"));
+  globalThis.localStorage.setItem = (key, value) => {
+    if (key === sessionKey + "test.deleted" && occupied()) {
+      throw new Error("QuotaExceededError");
+    }
+    plainSetItem(key, value);
+  };
+  try {
+    await mock.module.deleteSession("test");
+  } finally {
+    globalThis.localStorage.setItem = plainSetItem;
+  }
+  assert.equal(mock.fallback.has(sessionKey + "test"), false);
+  assert.equal(mock.fallback.has(sessionKey + "test.deleted"), true, "the retry must record the marker after cleanup");
+  await assert.rejects(
+    () => mock.module.saveSession({ id: "test", revision: 9, questions: [{ label: "Name", answer: "Retained stale private answer" }] }),
+    (error) => error.name === "SessionDeletedError",
+  );
+  assert.equal(mock.fallback.has(sessionKey + "test"), false, "a stale writer cannot resurrect the deleted questionnaire");
+});
+
+test("deletion without any durable marker reports incomplete removal", async () => {
+  const mock = await autoStorageMock({ noIndexedDB: true, legacySessions: [] });
+  await mock.module.saveSession({ id: "test", revision: 1, questions: [] });
+  // Permanently full storage: even after freeing space the marker fails.
+  const plainSetItem = globalThis.localStorage.setItem.bind(globalThis.localStorage);
+  globalThis.localStorage.setItem = (key, value) => {
+    if (key.endsWith(".deleted")) {
+      throw new Error("QuotaExceededError");
+    }
+    plainSetItem(key, value);
+  };
+  try {
+    await assert.rejects(
+      () => mock.module.deleteSession("test"),
+      (error) => /durable deletion marker/u.test(error.message),
+      "the deletion must not acknowledge removal without a durable marker",
+    );
+  } finally {
+    globalThis.localStorage.setItem = plainSetItem;
+  }
+});
