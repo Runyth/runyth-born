@@ -28,7 +28,7 @@ imports are relative.
 | `site/index.html`, `site/assets/home.js` | Catalog cards, new sessions, recent sessions |
 | `site/wizard.html`, `site/assets/wizard.js` | Questions, section navigation, progress, autosave scheduling, conflict handling, preserved-answer review, completion, downloads, delete control |
 | `site/assets/runtime.js` | Plain JavaScript reconciliation with match diagnostics, section counts, literal-text escaping for answers and preserved copies |
-| `site/assets/storage.js` | Session creation, cryptographic IDs, cross-copy revision authority, deletion markers preserving final removal, navigation position store, recovery records with schema upgrades and cross-store merges, legacy-namespace migration, localStorage fallback, scoped deletion |
+| `site/assets/storage.js` | Session creation, cryptographic IDs, cross-copy revision authority, atomic recovery reads/merges/commits, deletion markers preserving final removal under quota pressure, navigation position store, recovery records with schema upgrades and cross-store merges, legacy-namespace migration, localStorage fallback, scoped deletion |
 | `site/assets/portable.js` | Bounded gzip/JSON resume snapshots with save revisions, URL-fragment encoding/import |
 | `site/assets/app.css` | Responsive layout and UI styling |
 | `site/404.html` | Deployment-aware recovery from missing URLs |
@@ -44,9 +44,9 @@ imports are relative.
 | `scripts/validate-static.py` | Artifact references, compiled slots, catalog parity, no server/Go/WASM assets |
 | `scripts/package-release.sh` | Provenance checks, history scan, three release ZIPs, byte/mode verification, archive verification with extracted-source checks, checksums |
 | `scripts/check-release-tag.sh` | Release tag/VERSION agreement guard |
-| `scripts/scan-source-history.sh` | Redacted credential scan over every stored Git object, decoded with headers and binary payloads, plus Git support files |
-| `scripts/verify-committed-tree.sh` | Byte and mode verification of a tree against the packaged revision |
-| `scripts/test-release-guards.sh` | Canary battery running the real packaging in disposable clones |
+| `scripts/scan-source-history.sh` | Redacted credential scan over every stored Git object, decoded with headers and binary payloads, per-engine validated patterns, plus Git support files |
+| `scripts/verify-committed-tree.sh` | Byte and executable-class verification of a tree against the packaged revision with filesystem probes |
+| `scripts/test-release-guards.sh` | Canary battery running the real packaging in disposable clones with exact guard-evidence assertions |
 | `tests/js/` | Storage, resume, reconciliation, build-guard, release-tag, and Markdown fidelity regressions plus artifact smoke tests |
 | `tests/browser/smoke.mjs` | Chromium acceptance of unchanged root/project artifacts, or the actual deployment via `LIVE_SITE_URL` |
 | `package.json`, `package-lock.json` | Pinned development-only browser testing and Markdown validation dependencies |

@@ -12,8 +12,9 @@ mappings, sequences, plain and quoted scalars, inline JSON arrays/objects,
 explicit indentation indicators (for example `|2-`). Rejected: YAML anchors,
 aliases, tags, merge keys, and tab indentation. Syntax outside the subset fails
 the build instead of being interpreted loosely; accepted forms keep their
-specified meaning, including extra indentation inside folded scalars and
-comments after block scalar headers.
+specified meaning, including extra indentation inside folded scalars, comments
+after block scalar headers, quoted hashes inside inline JSON strings, and
+comments around inline JSON collections.
 
 ## Required mdast root
 

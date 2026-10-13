@@ -47,6 +47,12 @@ Deployment preparation continued on 2026-10-05.
 | Ignored inputs leaked into Runtime and Documentation archives | Build every bundle from the staged committed snapshot instead of the working tree. |
 | Byte/mode verification could be bypassed through hidden index state | Compare each tracked file's disk bytes and mode with the packaged commit directly. |
 | ZIP extraction dropped the shipped file modes | Restore the archived modes during verification. |
+| Concurrent recovery writers could replace each other's acknowledged entries | Read, merge, and commit recovery records inside one transaction; the fallback mirror re-checks after writing and merges an interfering writer. |
+| Recovery writes and fallback quota pressure could restore deleted questionnaires | Gate recovery writes inside the deletion-consulting commit transaction, retry the fallback marker after freeing space, and report completed removal only with a durable marker. |
+| POSIX whitespace classes were accepted by the Python object scanner without their POSIX meaning | Keep per-engine pattern forms with a runtime placeholder and validate every classification against a positive control in both engines. |
+| The mode verifier compared group execute and silenced itself on uniform trees | Verify the owner execute class, gate the reduced scope on chmod capability probes only, and report byte-only verification honestly. |
+| The canary battery failed on clean clones and accepted unrelated failures as rejections | Gate the overlay commit on real changes, keep setup failures fatal, require exact per-guard evidence, and run a negative-control case. |
+| Quoted hashes inside supported inline JSON read as YAML comments | Locate the JSON boundary with string/escape awareness and validate comments only around the collection. |
 
 ## Three verification layers
 
