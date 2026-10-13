@@ -396,9 +396,10 @@ func (p *parser) parseBlockScalar(parentIndent int, style byte, chomp byte, expl
 	artifact := func(index int) bool { return p.isFinalArtifactLine(index) }
 	start := p.index
 	cursor := start
-	// breaks holds the line breaks of the blank lines scanned since the last
-	// content line (initially the block's leading blank lines).
-	breaks := ""
+	// breakCount accumulates the line breaks of the blank lines scanned since
+	// the last content line (initially the block's leading blank lines); the
+	// count stays linear even for very long blank runs.
+	breakCount := 0
 	for cursor < len(p.lines) {
 		line := p.lines[cursor]
 		if artifact(cursor) {
@@ -414,7 +415,7 @@ func (p *parser) parseBlockScalar(parentIndent int, style byte, chomp byte, expl
 			break
 		}
 		if cursor+1 < len(p.lines) {
-			breaks += "\n"
+			breakCount++
 		}
 		cursor++
 	}
@@ -441,7 +442,7 @@ func (p *parser) parseBlockScalar(parentIndent int, style byte, chomp byte, expl
 			// A shallow all-space line is blank: it contributes its break when
 			// it is terminated and nothing at an unterminated end of input.
 			if terminated {
-				breaks += "\n"
+				breakCount++
 			}
 			cursor++
 			continue
@@ -449,7 +450,7 @@ func (p *parser) parseBlockScalar(parentIndent int, style byte, chomp byte, expl
 		residual := line[indent:]
 		if residual == "" {
 			if terminated {
-				breaks += "\n"
+				breakCount++
 			}
 			cursor++
 			continue
@@ -461,15 +462,15 @@ func (p *parser) parseBlockScalar(parentIndent int, style byte, chomp byte, expl
 			foldable := style == '>' && previousBreak == "\n" &&
 				!previousLeadSpace && residual[0] != ' ' && residual[0] != '\t'
 			switch {
-			case foldable && breaks == "":
+			case foldable && breakCount == 0:
 				out.WriteByte(' ')
 			case foldable:
 			default:
 				out.WriteString(previousBreak)
 			}
 		}
-		out.WriteString(breaks)
-		breaks = ""
+		out.WriteString(strings.Repeat("\n", breakCount))
+		breakCount = 0
 		out.WriteString(residual)
 		sawContent = true
 		previousLeadSpace = residual[0] == ' ' || residual[0] == '\t'
@@ -488,7 +489,7 @@ func (p *parser) parseBlockScalar(parentIndent int, style byte, chomp byte, expl
 		out.WriteString(previousBreak)
 	}
 	if chomp == '+' {
-		out.WriteString(breaks)
+		out.WriteString(strings.Repeat("\n", breakCount))
 	}
 	return out.String(), nil
 }
@@ -510,8 +511,67 @@ func (p *parser) isFinalArtifactLine(index int) bool {
 	return p.documentTerminated && index == len(p.lines)-1
 }
 
+// inlineJSON reports whether a scalar value starts an inline JSON collection.
+func inlineJSON(raw string) bool {
+	value := strings.TrimLeft(raw, " \t")
+	return strings.HasPrefix(value, "{") || strings.HasPrefix(value, "[")
+}
+
+// splitInlineJSON locates the end of the first top-level JSON collection,
+// honoring JSON string quoting and escaping, and returns the collection plus
+// everything after it, which is where a YAML comment may live. Quoted hashes
+// stay inside the strings instead of acting as comment starts (F08).
+func splitInlineJSON(raw string) (string, string, error) {
+	value := strings.TrimLeft(raw, " \t")
+	depth := 0
+	inString := false
+	escaped := false
+	for index := 0; index < len(value); index++ {
+		character := value[index]
+		if inString {
+			if escaped {
+				escaped = false
+				continue
+			}
+			switch character {
+			case '\\':
+				escaped = true
+			case '"':
+				inString = false
+			}
+			continue
+		}
+		switch character {
+		case '"':
+			inString = true
+		case '{', '[':
+			depth++
+		case '}', ']':
+			depth--
+			if depth == 0 {
+				return value[:index+1], value[index+1:], nil
+			}
+		}
+	}
+	return "", "", fmt.Errorf("unterminated inline JSON collection")
+}
+
 func parseScalar(raw string) (any, error) {
-	value := strings.TrimSpace(stripComment(raw))
+	// Inline JSON collections locate their trailing YAML comment with the
+	// JSON boundary itself, so quoted hashes stay inside the strings (F08);
+	// other scalars locate comments by scalar state.
+	value := ""
+	remainder := ""
+	if inlineJSON(raw) {
+		jsonPart, rest, err := splitInlineJSON(raw)
+		if err != nil {
+			return nil, fmt.Errorf("invalid inline JSON value: %w", err)
+		}
+		value = jsonPart
+		remainder = strings.TrimSpace(rest)
+	} else {
+		value = strings.TrimSpace(stripComment(raw))
+	}
 	if value == "" {
 		return "", nil
 	}
@@ -519,7 +579,10 @@ func parseScalar(raw string) (any, error) {
 		return nil, fmt.Errorf("YAML anchors, aliases, and tags are not supported")
 	}
 
-	if strings.HasPrefix(value, "{") || strings.HasPrefix(value, "[") {
+	if inlineJSON(raw) {
+		if remainder != "" && !strings.HasPrefix(remainder, "#") {
+			return nil, fmt.Errorf("inline JSON value contains trailing content")
+		}
 		var decoded any
 		decoder := json.NewDecoder(strings.NewReader(value))
 		decoder.UseNumber()

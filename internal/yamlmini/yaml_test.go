@@ -1,6 +1,7 @@
 package yamlmini
 
 import (
+	"encoding/json"
 	"reflect"
 	"testing"
 )
@@ -256,6 +257,40 @@ func TestQuotedScalarsKeepCommentCharactersInsideTheScalar(t *testing.T) {
 		}
 		if mapping["value"] != want {
 			t.Fatalf("value = %q, want %q", mapping["value"], want)
+		}
+	}
+}
+
+func TestInlineJSONKeepsQuotedHashesInsideStrings(t *testing.T) {
+	// Quoted hashes and comments around supported inline JSON collections
+	// follow scalar quote semantics (F08).
+	cases := map[string]any{
+		"value: [\"a # b\"]":                 []any{"a # b"},
+		"value: {\"note\": \"a # b\"}":       map[string]any{"note": "a # b"},
+		"value: [\"a # b\"] # later":         []any{"a # b"},
+		"value: {\"k\": [1, \"x # y\"]} # c": map[string]any{"k": []any{json.Number("1"), "x # y"}},
+		"value: [\"a \\\" b # c\"]":          []any{"a \" b # c"},
+		"value: [\"# not comment\"]":         []any{"# not comment"},
+		"value: {}":                          map[string]any{},
+		"value: []":                          []any{},
+	}
+	for source, want := range cases {
+		parsed, err := Parse([]byte(source + "\n"))
+		if err != nil {
+			t.Fatalf("Parse(%q) error = %v", source, err)
+		}
+		mapping, ok := parsed.(map[string]any)
+		if !ok {
+			t.Fatalf("root type = %T, want map[string]any", parsed)
+		}
+		got := mapping["value"]
+		if !reflect.DeepEqual(got, want) {
+			t.Fatalf("value = %#v, want %#v", got, want)
+		}
+	}
+	for _, source := range []string{"value: [\"just text\"] trailing\n", "value: [\"multi\n"} {
+		if _, err := Parse([]byte(source)); err == nil {
+			t.Fatalf("accepted invalid inline JSON source %q", source)
 		}
 	}
 }

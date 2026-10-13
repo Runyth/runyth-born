@@ -35,6 +35,43 @@ func TestCompileTemplateSlots(t *testing.T) {
 	}
 }
 
+// A complete valid mdast template may author inline JSON children with
+// quoted hashes inside string values (F08).
+func TestCompileInlineJSONWithQuotedHash(t *testing.T) {
+	for _, structure := range []string{`"Hash # identity:"`, `"Name:"`} {
+		source := []byte(`type: root
+children:
+  - type: heading
+    depth: 1
+    children:
+      - type: text
+        value: Inline Hash Template
+  - type: list
+    children:
+      - type: listItem
+        spread: false
+        checked: null
+        children:
+          - type: paragraph
+            children: [{"type": "strong", "children": [{"type": "text", "value": ` + structure + `}]}]
+`)
+		compiled, err := Compile(source, ".yaml")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(compiled.Questions) == 0 {
+			t.Fatal("no questions")
+		}
+		want := "**Hash \\# identity:**"
+		if structure == `"Name:"` {
+			want = "**Name:**"
+		}
+		if !strings.Contains(compiled.Parts[0].Text, want) {
+			t.Fatalf("inline JSON content changed: %q", compiled.Parts[0].Text)
+		}
+	}
+}
+
 // A complete valid mdast template may author multiline values with an
 // explicit indentation indicator and varying line depths; this compiles end
 // to end (F08).
