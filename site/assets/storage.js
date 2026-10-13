@@ -522,27 +522,99 @@ export async function loadSessionPosition(id) {
 
 // Preserved answer copies (unmatched after reconciliation, divergent portable
 // imports, rejected conflicting edits) are recoverable instead of lost. The
-// incoming record is merged with every stored copy first so a write never
-// replaces durable recovery state (F02).
+// write reads, merges, and commits inside one IndexedDB transaction so two
+// concurrent writers serially merge instead of replacing each other's
+// acknowledged additions (F02); the fallback copy re-checks after writing and
+// merges an interfering writer back. Deletion markers gate the write in both
+// paths so a pending preservation cannot repopulate a removed questionnaire
+// (F11).
 export async function saveRecovery(id, recovery) {
-  const existing = await loadRecovery(id).catch(() => null);
-  const record = {
+  if (await isSessionDeleted(id)) {
+    throw new SessionDeletedError();
+  }
+  const incoming = {
     id,
-    reason: recovery?.reason ?? existing?.reason ?? null,
-    fingerprint: recovery?.fingerprint ?? existing?.fingerprint ?? null,
-    entries: dedupeEntries([...(existing?.entries || []), ...answeredEntries(recovery?.entries)]),
+    reason: recovery?.reason ?? null,
+    fingerprint: recovery?.fingerprint ?? null,
+    entries: answeredEntries(recovery?.entries),
     saved_at: new Date().toISOString(),
   };
   try {
-    await putRecord(RECOVERY_STORE_NAME, record);
-  } catch (indexedDBError) {
+    return await runTransaction([RECOVERY_STORE_NAME, DELETION_STORE_NAME], "readwrite", (stores, transaction, state) => {
+      const [recoveries, deletions] = stores;
+      const deletionRequest = deletions.get(id);
+      deletionRequest.onsuccess = () => {
+        if (deletionRequest.result) {
+          state.deleted = true;
+          try { transaction.abort(); } catch { /* aborting after another failure is harmless */ }
+          return;
+        }
+        const request = recoveries.get(id);
+        request.onsuccess = () => {
+          const merged = mergeRecoveryRecords(request.result, incoming, id);
+          state.result = merged;
+          recoveries.put(merged);
+        };
+      };
+      return state.result;
+    });
+  } catch (error) {
+    if (error instanceof StorageConflictError || error instanceof SessionDeletedError) {
+      throw error;
+    }
     try {
-      localStorage.setItem(`${FALLBACK_PREFIX}${id}.recovery`, JSON.stringify(record));
+      return await fallbackSaveRecovery(id, incoming);
     } catch (fallbackError) {
-      throw new Error(`Could not preserve the answers locally: ${fallbackError.message || indexedDBError.message}`);
+      if (fallbackError instanceof SessionDeletedError) {
+        throw fallbackError;
+      }
+      throw new Error(`Could not preserve the answers locally: ${fallbackError.message || error.message}`);
     }
   }
-  return record;
+}
+
+// The fallback store has no transactions, so a concurrent tab could slip its
+// write between this read and write. Each attempt merges the freshly read
+// record, writes, and then re-checks: when a cross-tab writer dropped our
+// entries, the next round reads its acknowledged state and writes the union
+// (F02).
+async function fallbackSaveRecovery(id, incoming) {
+  const key = `${FALLBACK_PREFIX}${id}.recovery`;
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    if (readFallbackTombstone(id)) {
+      throw new SessionDeletedError();
+    }
+    let current = null;
+    try {
+      const raw = localStorage.getItem(key);
+      current = raw ? JSON.parse(raw) : null;
+    } catch {
+      current = null;
+    }
+    const merged = mergeRecoveryRecords(current, incoming, id);
+    try {
+      localStorage.setItem(key, JSON.stringify(merged));
+    } catch (fallbackError) {
+      throw new Error(`Could not preserve the answers locally: ${fallbackError.message}`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, attempt === 0 ? 0 : 60));
+    let rechecked = null;
+    try {
+      const raw = localStorage.getItem(key);
+      rechecked = raw ? JSON.parse(raw) : null;
+    } catch {
+      rechecked = null;
+    }
+    const storedAnswers = new Set((rechecked?.entries || []).map(coveredEntry));
+    if (!incoming.entries.some((entry) => !storedAnswers.has(coveredEntry(entry)))) {
+      return normalizeRecoveryRecord(rechecked, id) ?? mergeRecoveryRecords(current, incoming, id);
+    }
+  }
+  throw new Error("Could not preserve the answers: another writer keeps replacing the record");
+}
+
+function coveredEntry(entry) {
+  return [entry.id, entry.fallback_id, entry.label, (entry.breadcrumb || []).join("\u0000"), entry.answer].join("\u0000");
 }
 
 export async function loadRecovery(id) {
@@ -640,6 +712,11 @@ export async function deleteSession(id) {
   if (!id) {
     throw new Error("A session identifier is required");
   }
+  // The marker is the durable invalidation every later writer consults, so
+  // deletion is only acknowledged once one store holds it. Fallback storage
+  // may refuse under quota pressure; the marker is retried after the removal
+  // frees space, and an unrecorded deletion reports incompleteness (F11).
+  let durableIndexedDBMarker = false;
   try {
     localStorage.setItem(fallbackTombstoneKey(id), JSON.stringify({ id, deleted_at: new Date().toISOString() }));
   } catch { /* The fallback tombstone may be unwritable; the IndexedDB marker still applies. */ }
@@ -658,6 +735,7 @@ export async function deleteSession(id) {
         state.result = null;
         return state.result;
       });
+      durableIndexedDBMarker = true;
     } catch {
       removedIndexedDB = false;
     }
@@ -674,8 +752,17 @@ export async function deleteSession(id) {
       }
     }
   } catch { /* Fallback storage is unavailable, so it held no removable copies. */ }
-  if (!removedIndexedDB) {
-    throw new Error("Could not delete every stored copy of this questionnaire");
+  if (durableIndexedDBMarker || readFallbackTombstone(id)) {
+    if (!removedIndexedDB) {
+      throw new Error("Could not delete every stored copy of this questionnaire");
+    }
+    return;
+  }
+  try {
+    localStorage.setItem(fallbackTombstoneKey(id), JSON.stringify({ id, deleted_at: new Date().toISOString() }));
+  } catch { /* The fallback marker could not be recorded under storage pressure. */ }
+  if (!readFallbackTombstone(id)) {
+    throw new Error("Could not record a durable deletion marker; the questionnaire may be recreated by an already-queued writer");
   }
 }
 
