@@ -6,13 +6,18 @@ set -euo pipefail
 # assume-unchanged entries cannot hide altered content from this comparison,
 # because the committed blob bytes are compared with the actual disk bytes
 # (F12). Diagnostics are redacted: classification and path only.
-# Usage: scripts/verify-committed-tree.sh [repository-root]
+# Mode verification uses the owner execute class. On a filesystem that cannot
+# represent Unix modes (detected by a chmod round-trip probe on the target and
+# the class-verified origin), only bytes are verified and the success message
+# reports the reduced scope honestly (F12).
+# Usage: scripts/verify-committed-tree.sh <repository-root> [origin-root]
 
 declare -r script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 declare -r project_root="$(cd -- "${script_dir}/.." && pwd -P)"
 declare -r verify_root="${1:-"${project_root}"}"
+declare -r origin_root="${2:-}"
 
-python3 - "${verify_root}" <<'PY'
+python3 - "${verify_root}" "${origin_root}" <<'PY'
 import hashlib
 import os
 import stat
@@ -21,22 +26,16 @@ import sys
 from pathlib import Path
 
 root = Path(sys.argv[1])
+origin = Path(sys.argv[2]) if len(sys.argv) > 2 and sys.argv[2] else None
 listing = subprocess.run(
     ["git", "-C", str(root), "ls-tree", "-r", "HEAD", "-z"],
     stdout=subprocess.PIPE, check=True).stdout.decode().split("\0")
 
 problems = 0
 
-# Some filesystems or copy paths cannot represent or preserve Unix modes: the
-# probe verifies chmod round-tripping here, and a tree whose every tracked file
-# carries the same wearable bits is treated the same way. In that situation
-# only bytes are verified; on a mode-preserving filesystem the exact commit
-# mode classes are enforced.
-mode_values = set()
 
-
-def is_meaningful_mode_probe():
-    probe = Path(root) / ".verify-committed-tree-mode-probe"
+def chmod_probe(base):
+    probe = base / ".verify-committed-tree-mode-probe"
     try:
         probe.write_bytes(b"")
         os.chmod(probe, 0o600)
@@ -50,8 +49,7 @@ def is_meaningful_mode_probe():
             pass
 
 
-modes_are_meaningful = is_meaningful_mode_probe()
-executable_expectations = set()
+modes_are_meaningful = chmod_probe(root) and (origin is None or chmod_probe(origin))
 
 
 def report(kind, path):
@@ -72,8 +70,6 @@ for entry in listing:
         continue
     metadata, _, path_part = entry.partition("\t")
     mode, kind, sha = metadata.split()
-    if kind in ("blob", "executable"):
-        executable_expectations.add((int(mode, 8) & stat.S_IXGRP) != 0)
     target = Path(root) / path_part
     if kind == "commit":
         # A submodule commit; the archive carries a gitlink directory. Only
@@ -83,8 +79,8 @@ for entry in listing:
         continue
     if not target.is_file():
         if kind == "symlink" and target.is_symlink():
-            target_bytes = path.resolve().as_posix().encode()
-            if blob_sha1(target_bytes) != sha:
+            resolved = target.resolve().as_posix().encode()
+            if blob_sha1(resolved) != sha:
                 report("tracked bytes changed", path_part)
             continue
         report("missing tracked file", path_part)
@@ -92,29 +88,18 @@ for entry in listing:
     data = target.read_bytes()
     if blob_sha1(data) != sha:
         report("tracked bytes changed", path_part)
-    mode_values.add(stat.S_IMODE(target.lstat().st_mode))
-
-if modes_are_meaningful and len(mode_values) == 1 and len(executable_expectations) >= 2:
-    # The verification environment loses modes wholesale; bytes still carry
-    # the full provenance proof.
-    modes_are_meaningful = False
-
-for entry in listing:
-    if not entry:
-        continue
-    metadata, _, path_part = entry.partition("\t")
-    mode, kind, sha = metadata.split()
-    target = Path(root) / path_part
-    if kind == "commit" or not target.is_file():
-        continue
     if not modes_are_meaningful:
         continue
     actual_mode = stat.S_IMODE(target.lstat().st_mode)
-    if (actual_mode & stat.S_IXGRP) != (int(mode, 8) & stat.S_IXGRP):
+    committed_executable = (int(mode, 8) & stat.S_IXUSR) != 0
+    if ((actual_mode & stat.S_IXUSR) != 0) != committed_executable:
         report("tracked executable bits changed", path_part)
 
 if problems:
     print(f"The shipped tree does not match the committed revision ({problems} differences)", file=sys.stderr)
     sys.exit(1)
-print("Committed-tree verification passed: bytes and modes match the packaged revision")
+if modes_are_meaningful:
+    print("Committed-tree verification passed: bytes and modes match the packaged revision")
+else:
+    print("Committed-tree verification passed: bytes match the packaged revision; mode verification unavailable for this filesystem")
 PY
