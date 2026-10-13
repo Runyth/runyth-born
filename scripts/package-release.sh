@@ -59,7 +59,7 @@ PY
 (
   cd -- "${temporary_root}/${source_name}"
   declare -r staged_dir="${PWD}"
-  bash scripts/verify-committed-tree.sh "${staged_dir}" || exit 1
+  bash scripts/verify-committed-tree.sh "${staged_dir}" "${project_root}" || exit 1
 )
 
 declare -r dist_dir="${temporary_root}/dist"

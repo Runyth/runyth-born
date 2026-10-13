@@ -6,9 +6,13 @@ set -euo pipefail
 # not, binary or text — decoded through cat-file so commit headers, tag
 # bodies, tree entries and binary payloads are scanned as their real bytes,
 # plus the plain files inside .git such as the copied configuration and
-# packed refs (F12). Matches are reported redacted — classification,
-# object identity and location only, never the matched text. Invalid patterns
-# fail loudly instead of silently scanning nothing.
+# packed refs (F12). Matches are reported redacted — classification, object
+# identity and location only, never the matched text.
+# Patterns carry %PLACEHOLDER% skeletons because POSIX ERE and Python regular
+# expressions do not share whitespace syntax; each engine receives its own
+# validated translation, and a fictional positive control must match there
+# for every classification before any scanning starts (F12). Invalid
+# patterns or controls fail loudly instead of silently scanning nothing.
 # Usage: scripts/scan-source-history.sh [repository-root]
 
 declare -r script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
@@ -16,38 +20,127 @@ declare -r project_root="$(cd -- "${script_dir}/.." && pwd -P)"
 declare -r scan_root="${1:-"${project_root}"}"
 
 patterns=(
-  'GitHub personal token|ghp_[A-Za-z0-9]{36,40}'
-  'GitHub fine-grained token|github_pat_[A-Za-z0-9_]{60,100}'
-  'GitHub OAuth token|gho_[A-Za-z0-9]{36,40}'
-  'GitHub server token|ghs_[A-Za-z0-9]{36,40}'
-  'AWS access key|AKIA[0-9A-Z]{16}'
-  'OpenAI-style API key|sk-[A-Za-z0-9_-]{32,}'
-  'Google API key|AIza[0-9A-Za-z_-]{35}'
-  'Private key header|-----BEGIN (RSA |EC |OPENSSH |DSA |PGP |ENCRYPTED )?PRIVATE KEY-----'
-  'HTTP URL credentials|https?://[^/[:space:]@]+:[^/[:space:]@]+@'
+  'GitHub personal token|ghp_%TOKEN38%'
+  'GitHub fine-grained token|github_pat_%TOKEN60%'
+  'GitHub OAuth token|gho_%TOKEN38%'
+  'GitHub server token|ghs_%TOKEN38%'
+  'AWS access key|AKIA%KEY16%'
+  'OpenAI-style API key|sk-%TOKEN32%'
+  'Google API key|AIza%KEY35%'
+  'Private key header|-----BEGIN %KEYWORD%PRIVATE KEY-----'
+  'HTTP URL credentials|https?://[^/%SPACE%@]+:[^/%SPACE%@]+@'
   'Authorization header|Authorization: *(Basic |Bearer )[A-Za-z0-9+/=._-]{8,}'
 )
 
+declare -r filler64="$(printf 'a%.0s' $(seq 1 64))"
+
+# Fictional positive controls per class, assembled at runtime so the
+# scanner's own source never contains fully-formed matches (F12).
+controlFor() {
+  local -r class="${1}"
+  case "${class}" in
+    'GitHub personal token') printf 'ghp_%s' "${filler64:0:36}" ;;
+    'GitHub fine-grained token') printf 'github_pat_%s' "${filler64:0:60}" ;;
+    'GitHub OAuth token') printf 'gho_%s' "${filler64:0:36}" ;;
+    'GitHub server token') printf 'ghs_%s' "${filler64:0:36}" ;;
+    'AWS access key') printf 'AKIA%s' "$(printf 'Z%.0s' $(seq 1 16))" ;;
+    'OpenAI-style API key') printf 'sk-%s' "${filler64:0:32}" ;;
+    'Google API key') printf 'AIza%s' "${filler64:0:35}" ;;
+    # The key word exists only at runtime: the skeleton in this file carries a
+    # placeholder, so the file itself cannot satisfy the pattern.
+    'Private key header') printf -- '-----BEGIN %s PRIVATE KEY-----' 'EC' ;;
+    # The URL and scheme parts are assembled at runtime, so no source line of
+    # this scanner itself can satisfy the pattern (F12).
+    'HTTP URL credentials') printf '%s://%s@%s/%s' 'http' 'user:fictional-pass' 'scanner-control.invalid' 'archive' ;;
+    'Authorization header') printf 'Authorization: Basic %s' "${filler64:0:12}==" ;;
+  esac
+}
+
+# Expands the pattern skeletons into engine-local ERE forms, keeping the
+# original pattern shapes exactly. The %SPACE% placeholder resolves to the
+# POSIX bracket-expression class element ([:space:]) for grep and to \s for
+# the Python object scanner: the two engines parse those whitespace
+# conventions differently, so each engine receives its own validated form
+# plus a matching control (F12).
+expandCommon() {
+  local -r skeleton="${1}"
+  local -r token38='[A-Za-z0-9]{36,40}'
+  local -r token60='[A-Za-z0-9_]{60,100}'
+  local -r token32='[A-Za-z0-9_-]{32,}'
+  local -r key16='[0-9A-Z]{16}'
+  local -r key35='[0-9A-Za-z_-]{35}'
+  local -r keyword='(RSA |EC |OPENSSH |DSA |PGP |ENCRYPTED )?'
+  local expanded="${skeleton//%TOKEN38%/${token38}}"
+       expanded="${expanded//%TOKEN60%/${token60}}"
+       expanded="${expanded//%TOKEN32%/${token32}}"
+       expanded="${expanded//%KEY16%/${key16}}"
+       expanded="${expanded//%KEY35%/${key35}}"
+       expanded="${expanded//%KEYWORD%/${keyword}}"
+  printf '%s' "${expanded}"
+}
+
+posixForm() {
+  printf '%s' "${1//%SPACE%/[:space:]}"
+}
+
+pythonForm() {
+  local -r replacement='\s'
+  printf '%s' "${1//%SPACE%/${replacement}}"
+}
+
 declare -a classes=()
-declare -a regexes=()
+declare -a posix_patterns=()
+declare -a python_patterns=()
 combined=""
 for pattern in "${patterns[@]}"; do
   class="${pattern%%|*}"
-  regex="${pattern#*|}"
+  skeleton="${pattern#*|}"
+  common="$(expandCommon "${skeleton}")"
+  posix="$(posixForm "${common}")"
+  python_pattern="$(pythonForm "${common}")"
+  control="$(controlFor "${class}")"
   probe_status=0
-  printf 'scan-pattern-probe' | grep -E -- "${regex}" >/dev/null 2>&1 || probe_status=$?
+  printf 'scan-pattern-probe' | grep -E -- "${posix}" >/dev/null 2>&1 || probe_status=$?
   if [[ "${probe_status}" -ge 2 ]]; then
     printf 'Invalid scan pattern for %s\n' "${class}" >&2
     exit 1
   fi
+  if ! printf '%s' "${control}" | grep -E -q -- "${posix}"; then
+    printf 'Scan pattern for %s does not match its positive control (grep engine)\n' "${class}" >&2
+    exit 1
+  fi
+  # The object scanner runs under Python re, whose whitespace syntax differs
+  # from POSIX ERE; the Python engine must see both a valid expression and a
+  # matching control or the scanner refuses to run (F12).
+  if ! python3 - "${class}" "${python_pattern}" "${control}" <<'PY'
+import re
+import sys
+
+python_pattern = sys.argv[2].encode()
+re.compile(python_pattern)
+control = sys.argv[3].encode()
+if not re.search(python_pattern, control):
+    sys.exit(1)
+PY
+  then
+    printf 'Scan pattern for %s does not match its positive control (object scanner engine)\n' "${class}" >&2
+    exit 1
+  fi
   classes+=("${class}")
-  regexes+=("${regex}")
+  posix_patterns+=("${posix}")
+  python_patterns+=("${python_pattern}")
   if [[ -z "${combined}" ]]; then
-    combined="${regex}"
+    combined="${posix}"
   else
-    combined="${combined}|${regex}"
+    combined="${combined}|${posix}"
   fi
 done
+probe_status=0
+printf 'scan-pattern-probe' | grep -E -- "${combined}" >/dev/null 2>&1 || probe_status=$?
+if [[ "${probe_status}" -ge 2 ]]; then
+  printf 'Invalid combined scan pattern\n' >&2
+  exit 1
+fi
 
 failures=0
 report() {
@@ -58,15 +151,16 @@ report() {
 # Decode every stored object of the repository. This is exactly the object set
 # a packaged Source ZIP ships, so dangling and out-of-ref objects are part of
 # the published bytes and are scanned the same way (F12).
-python3 - "${scan_root}" "${classes[@]}" "${regexes[@]}" <<'PY'
+python3 - "${scan_root}" "${classes[@]}" "${python_patterns[@]}" <<'PY'
 import re
 import subprocess
 import sys
 
 root = sys.argv[1]
 count = (len(sys.argv) - 2) // 2
-specs = [(sys.argv[2 + i], re.compile(sys.argv[2 + count + i].encode(), re.DOTALL)) for i in range(count)]
-combined = [spec[1] for spec in specs]
+specs = []
+for index in range(count):
+    specs.append((sys.argv[2 + index], re.compile(sys.argv[2 + count + index].encode(), re.DOTALL)))
 
 found = False
 
@@ -94,7 +188,7 @@ while True:
             break
         body += chunk
         remaining -= len(chunk)
-    trailing_break = stream.read(1)
+    stream.read(1)
     for cls, pattern in specs:
         if pattern.search(body):
             report(cls, f"git object {sha} ({kind})")
@@ -112,8 +206,8 @@ fi
 if file_paths="$(grep -R -I -l -E -- "${combined}" "${scan_root}/.git" 2>/dev/null)" && [[ -n "${file_paths}" ]]; then
   while IFS= read -r file_path; do
     index=0
-    for regex in "${regexes[@]}"; do
-      if grep -I -q -E -- "${regex}" "${file_path}" 2>/dev/null; then
+    for posix in "${posix_patterns[@]}"; do
+      if grep -I -q -E -- "${posix}" "${file_path}" 2>/dev/null; then
         report "${classes[${index}]}" "git file ${file_path#"${scan_root}"/}"
       fi
       index=$((index + 1))
