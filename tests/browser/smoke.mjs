@@ -757,6 +757,58 @@ try {
   void raceOutcome.deletionSettled;
   await race.close();
   console.log("Browser acceptance passed: recovery-delete race");
+
+  // Native fallback quota: filling real browser localStorage until the quota
+  // raises, then deleting a session, must record the marker by retrying after
+  // the removal freed space, and must reject a retained stale copy (F11).
+  const quota = await browser.newContext();
+  await quota.addInitScript(() => Object.defineProperty(globalThis, "indexedDB", { value: undefined }));
+  const quotaPage = await quota.newPage();
+  await quotaPage.goto(origin + fixtures[0][0]);
+  await quotaPage.locator(".start-form button").first().waitFor();
+  const quotaOutcome = await quotaPage.evaluate(async () => {
+    const storage = await import("./assets/storage.js");
+    const now = new Date().toISOString();
+    const session = {
+      version: 2, id: "quota-delete-01", template_id: "legacy-template",
+      template_filename: "minimal-template.mdast.json", template_fingerprint: "seed",
+      template_name: "Character Backstory", player_name: "Alex",
+      created_at: now, updated_at: now, current_question: 0, completed: false, revision: 0,
+      questions: [{ id: "quota\u001fname#1", fallback_id: "name#1", answer: "Private answer before deletion",
+        label: "Name", breadcrumb: ["Character Backstory", "Core"], context: [], label_ordinal: 1 }],
+    };
+    await storage.saveSession(session, { touch: true });
+    const staleCopy = structuredClone(session);
+    let quotaRaised = false;
+    for (let index = 0; index < 200000 && !quotaRaised; index += 1) {
+      try {
+        localStorage.setItem(`runyth-born-quota-filler-${index}`, "z".repeat(4096));
+      } catch (error) {
+        quotaRaised = error.name === "QuotaExceededError" || error.name === "DOMException";
+      }
+    }
+    if (!quotaRaised) {
+      throw new Error("the browser storage did not run out of quota during the probe");
+    }
+    await storage.deleteSession("quota-delete-01");
+    const loaded = await storage.loadSession("quota-delete-01");
+    let staleRejected = false;
+    try {
+      await storage.saveSession(staleCopy, { touch: false });
+    } catch (error) {
+      staleRejected = error.name === "SessionDeletedError";
+    }
+    return {
+      loaded: loaded === null,
+      staleRejected,
+      recent: (await storage.listRecentSessions(50)).map((entry) => entry.id),
+    };
+  });
+  assert.equal(quotaOutcome.loaded, true, "the questionnaire must be gone after a completed fallback deletion under quota");
+  assert.equal(quotaOutcome.staleRejected, true, "a retained stale copy cannot recreate the deleted questionnaire (F11)");
+  assert.ok(!quotaOutcome.recent.includes("quota-delete-01"), "the deleted questionnaire must not be listed");
+  await quota.close();
+  console.log("Browser acceptance passed: native quota deletion");
 } catch (error) {
   if (activePage && !activePage.isClosed()) {
     console.error(await activePage.evaluate(() => ({ question: document.getElementById("question-number")?.textContent,
