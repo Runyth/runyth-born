@@ -42,7 +42,7 @@ imports are relative.
 | `scripts/check.sh` | Formatting, race tests, vet, JS tests/syntax, build and artifact smoke checks |
 | `scripts/build-static.sh` | Static build with tracked-source output protection |
 | `scripts/validate-static.py` | Artifact references, compiled slots, catalog parity, no server/Go/WASM assets |
-| `scripts/package-release.sh` | Provenance checks, history scan, three release ZIPs, byte/mode verification, archive verification with extracted-source checks, checksums |
+| `scripts/package-release.sh` | Provenance checks, history scan, three release ZIPs, byte/mode verification, archive verification with extracted-source checks, checksums, physical isolation of nested Git-directory symlinks and copied worktree redirects |
 | `scripts/check-release-tag.sh` | Release tag/VERSION agreement guard |
 | `scripts/scan-source-history.sh` | Redacted credential scan over every stored Git object, decoded with headers and binary payloads, per-engine validated patterns, plus Git support files |
 | `scripts/verify-committed-tree.sh` | Byte and executable-class verification of a tree against the packaged revision with filesystem probes |

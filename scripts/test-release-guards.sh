@@ -280,6 +280,109 @@ caseAliasPackaging() {
   printf 'guard alias-packaging: staged cleanup isolated the original checkout through success and failure\n'
 }
 
+# Hashes every reflog file so a cleanup that follows a nested Git link is
+# visible as a changed or missing original file (F15).
+hashReflogs() {
+  local root="${1}"
+  local file
+  find "${root}/logs" -type f | sort | while IFS= read -r file; do
+    sha256sum -- "${file}"
+  done
+}
+
+# A checkout whose .git is an absolute directory symlink to a sibling Git
+# directory is a valid layout. Packaging must still succeed, and a later
+# pipeline failure must also leave that sibling's reflog hashes unchanged.
+caseGitdirSymlink() {
+  local target gitdir before after
+  target="$(freshClone gitdir-symlink)"
+  gitdir="${workroot}/external-gitdir"
+  if ! mv -- "${target}/.git" "${gitdir}" || ! ln -s -- "${gitdir}" "${target}/.git"; then
+    abortSetup "cannot create the nested Git directory symlink"
+  fi
+  if [[ -n "$(git -C "${target}" status --porcelain)" ]]; then
+    abortSetup "the nested Git directory symlink is not a clean checkout"
+  fi
+  before="$(hashReflogs "${gitdir}")"
+  if [[ -z "${before}" ]]; then
+    abortSetup "the external Git directory has no reflogs"
+  fi
+  if ! bash "${target}/scripts/package-release.sh" >/dev/null 2>&1; then
+    printf 'guard gitdir-symlink: packaging should succeed after isolating nested Git metadata\n' >&2
+    failures=1
+    return 0
+  fi
+  after="$(hashReflogs "${gitdir}")"
+  if [[ "${before}" != "${after}" ]]; then
+    printf 'guard gitdir-symlink: successful packaging changed original reflogs\n' >&2
+    failures=1
+    return 0
+  fi
+  if SITE_BASE_PATH='bad/../value' bash "${target}/scripts/package-release.sh" >/dev/null 2>&1; then
+    printf 'guard gitdir-symlink: the broken packaging unexpectedly succeeded\n' >&2
+    failures=1
+    return 0
+  fi
+  after="$(hashReflogs "${gitdir}")"
+  if [[ "${before}" != "${after}" ]]; then
+    printf 'guard gitdir-symlink: failed packaging changed original reflogs\n' >&2
+    failures=1
+    return 0
+  fi
+  if [[ -n "$(git -C "${target}" status --porcelain)" ]]; then
+    printf 'guard gitdir-symlink: packaging changed the original checkout status\n' >&2
+    failures=1
+    return 0
+  fi
+  printf 'guard gitdir-symlink: nested Git directory symlink stayed isolated through success and failure\n'
+}
+
+# An absolute core.worktree in the copied configuration must not redirect
+# staged cleanup onto the original checkout. The original ignored files,
+# node_modules marker, and configuration value survive success and failure.
+caseWorktreeConfig() {
+  local target worktree
+  target="$(freshClone worktree-config)"
+  worktree="$(cd -- "${target}" && pwd -P)"
+  printf 'developer private ignored content\n' > "${target}/developer-fixture.log"
+  mkdir -p "${target}/node_modules/probe"
+  printf 'ignored node_modules marker\n' > "${target}/node_modules/probe/marker.log"
+  git -C "${target}" config core.worktree "${worktree}"
+  if [[ "$(git -C "${target}" config --get core.worktree)" != "${worktree}" ]]; then
+    abortSetup "cannot set the absolute worktree fixture"
+  fi
+  if [[ -n "$(git -C "${target}" status --porcelain)" ]]; then
+    abortSetup "the worktree fixture is not a clean checkout"
+  fi
+  originalPreserved() {
+    test -f "${target}/developer-fixture.log" &&
+      test -f "${target}/node_modules/probe/marker.log" &&
+      [[ "$(git -C "${target}" config --get core.worktree)" == "${worktree}" ]] &&
+      [[ -z "$(git -C "${target}" status --porcelain)" ]]
+  }
+  if ! bash "${target}/scripts/package-release.sh" >/dev/null 2>&1; then
+    printf 'guard worktree-config: packaging should succeed without cleaning the original checkout\n' >&2
+    failures=1
+    return 0
+  fi
+  if ! originalPreserved; then
+    printf 'guard worktree-config: successful packaging changed original ignored files or configuration\n' >&2
+    failures=1
+    return 0
+  fi
+  if SITE_BASE_PATH='bad/../value' bash "${target}/scripts/package-release.sh" >/dev/null 2>&1; then
+    printf 'guard worktree-config: the broken packaging unexpectedly succeeded\n' >&2
+    failures=1
+    return 0
+  fi
+  if ! originalPreserved; then
+    printf 'guard worktree-config: failed packaging changed original ignored files or configuration\n' >&2
+    failures=1
+    return 0
+  fi
+  printf 'guard worktree-config: absolute core.worktree stayed isolated through success and failure\n'
+}
+
 caseTracked
 caseMessage
 caseTag
@@ -291,6 +394,8 @@ caseAuthenticatedURL
 caseOwnerMode
 caseUniformMode
 caseAliasPackaging
+caseGitdirSymlink
+caseWorktreeConfig
 caseRequiredFailingSetup
 caseIgnoredInputs
 
