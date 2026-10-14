@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 3.0.0 - 2026-10-14
+
 - Parse the supported YAML subset the way the reference parser does: plain scalars fold across deeper lines with blank runs kept as line breaks, comment-only values still dispatch to the nested block, sequences and nested mappings work at any indentation, quoted mapping keys are mappings rather than standalone scalars, inline JSON and flow collections (bare keys, shorthand entries, trailing commas) are typed values, and malformed whitespace returns a validation error instead of panicking.
 - Keep fallback preservation intact across independently executing documents: each live document generates its own writer identity in memory instead of trusting a cloneable sessionStorage token, so an opener-copied identity cannot erase another document's acknowledged preserved answer. Existing rows stay unioned across reloads, and deleting a questionnaire removes every row.
 - Report a failed primary cleanup as an incomplete deletion on every marker branch, including the retry after fallback quota pressure, so a surviving readable copy is never acknowledged as removed.
