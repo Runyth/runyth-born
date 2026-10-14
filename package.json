@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test:browser": "node tests/browser/smoke.mjs dist"
+    "test:browser": "node tests/browser/smoke.mjs dist && node tests/browser/writer-isolation.mjs dist"
   },
   "devDependencies": {
     "markdown-it": "^15.0.2",

@@ -56,6 +56,7 @@ Deployment preparation continued on 2026-10-05.
 | Quoted hashes inside supported inline JSON read as YAML comments | Locate the JSON boundary with string/escape awareness and validate comments only around the collection. |
 | Quoted mapping keys were parsed as standalone scalars | Distinguish a quoted key from a quoted value before scalar dispatch, including nested blocks. |
 | Malformed NBSP-plus-tab input panicked the build parser | Return a validation error for a structural line that is empty after trimming, before indexing it. |
+| Copied sessionStorage writer tokens let independent documents share a fallback row | Generate each live document's writer identity in memory and keep existing rows unioned across reloads. | |
 
 ## Three verification layers
 
