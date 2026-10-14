@@ -54,6 +54,8 @@ Deployment preparation continued on 2026-10-05.
 | The mode verifier compared group execute and silenced itself on uniform trees | Verify the owner execute class, gate the reduced scope on chmod capability probes only, and report byte-only verification honestly. |
 | The canary battery failed on clean clones and accepted unrelated failures as rejections | Gate the overlay commit on real changes, keep setup failures fatal, require exact per-guard evidence, and run a negative-control case. |
 | Quoted hashes inside supported inline JSON read as YAML comments | Locate the JSON boundary with string/escape awareness and validate comments only around the collection. |
+| Quoted mapping keys were parsed as standalone scalars | Distinguish a quoted key from a quoted value before scalar dispatch, including nested blocks. |
+| Malformed NBSP-plus-tab input panicked the build parser | Return a validation error for a structural line that is empty after trimming, before indexing it. |
 
 ## Three verification layers
 

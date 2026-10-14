@@ -156,3 +156,41 @@ children:
 		t.Fatalf("arbitrary indentation content not preserved: %q", compiled.Parts[0].Text)
 	}
 }
+
+// A complete valid mdast template may quote its first mapping key. That is a
+// mapping entry, not a standalone quoted scalar (F08).
+func TestCompileTemplateWithQuotedRootKey(t *testing.T) {
+	source := []byte(`"type": root
+children:
+    - type: heading
+      depth: 1
+      children:
+           - type: text
+             value: Quoted Key Template
+    - type: list
+      ordered: false
+      start: null
+      spread: false
+      children:
+             - type: listItem
+               spread: false
+               checked: null
+               children:
+                    - type: paragraph
+                      children:
+                           - type: strong
+                             children:
+                                  - type: text
+                                    value: "Name:"
+`)
+	compiled, err := Compile(source, ".yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(compiled.Questions) == 0 {
+		t.Fatal("no questions")
+	}
+	if !strings.Contains(compiled.Parts[0].Text, "Name:") {
+		t.Fatalf("quoted root key content not preserved: %q", compiled.Parts[0].Text)
+	}
+}

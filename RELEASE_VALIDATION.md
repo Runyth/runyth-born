@@ -19,7 +19,7 @@ The gate verifies:
 - `go test -race ./...`;
 - `go vet ./...`;
 - JavaScript syntax;
-- Node.js unit tests for shared save authority across both storage copies, tied-copy preservation of real question answers, recovery records from both stores with prior-schema upgrades, merged clock-rollback branches and atomic concurrent writes, fallback-only migration, deletion across migration boundaries, tombstoned identifiers that block queued saves, recovery writes, and re-migration, durable deletion markers under fallback quota pressure, divergent-branch imports, queued save conflicts, session/resume encoding, build-output guards including symlinked checkouts, release-tag agreement, block scalar semantics including quoted hashes inside inline JSON, and Markdown fidelity;
+- Node.js unit tests for shared save authority across both storage copies, tied-copy preservation of real question answers, recovery records from both stores with prior-schema upgrades, merged clock-rollback branches and atomic concurrent writes, fallback-only migration, deletion across migration boundaries, tombstoned identifiers that block queued saves, recovery writes, and re-migration, durable deletion markers under fallback quota pressure, divergent-branch imports, queued save conflicts, session/resume encoding, build-output guards including symlinked checkouts, release-tag agreement, block scalar semantics including quoted mapping keys and malformed whitespace, and Markdown fidelity;
 - a complete static build;
 - plain JavaScript reconciliation/rendering against every published template;
 - generated template catalog integrity;

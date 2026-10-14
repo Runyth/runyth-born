@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- Parse the supported YAML subset the way the reference parser does: plain scalars fold across deeper lines with blank runs kept as line breaks, comment-only values still dispatch to the nested block, sequences and nested mappings work at any indentation, inline JSON and flow collections (bare keys, shorthand entries, trailing commas) are typed values, and a finished deletion of content is never confused with a marker alone.
+- Parse the supported YAML subset the way the reference parser does: plain scalars fold across deeper lines with blank runs kept as line breaks, comment-only values still dispatch to the nested block, sequences and nested mappings work at any indentation, quoted mapping keys are mappings rather than standalone scalars, inline JSON and flow collections (bare keys, shorthand entries, trailing commas) are typed values, and malformed whitespace returns a validation error instead of panicking.
 - Keep fallback preservation intact across tabs: each tab records its recovery additions in its own row, so a late stale writer can no longer erase another tab's acknowledged preserved answer, and deleting a questionnaire removes every row.
 - Report a failed primary cleanup as an incomplete deletion on every marker branch, including the retry after fallback quota pressure, so a surviving readable copy is never acknowledged as removed.
 - Isolate release packaging from the invoking checkout: both packaging roots are physically canonicalized and the staging copy must be a real directory under the temporary root before destructive cleanup, so packaging through a symlink alias can no longer delete the original checkout's ignored files or Git logs.
