@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Parse the supported YAML subset the way the reference parser does: plain scalars fold across deeper lines with blank runs kept as line breaks, comment-only values still dispatch to the nested block, sequences and nested mappings work at any indentation, inline JSON and flow collections (bare keys, shorthand entries, trailing commas) are typed values, and a finished deletion of content is never confused with a marker alone.
+- Keep fallback preservation intact across tabs: each tab records its recovery additions in its own row, so a late stale writer can no longer erase another tab's acknowledged preserved answer, and deleting a questionnaire removes every row.
+- Report a failed primary cleanup as an incomplete deletion on every marker branch, including the retry after fallback quota pressure, so a surviving readable copy is never acknowledged as removed.
+- Isolate release packaging from the invoking checkout: both packaging roots are physically canonicalized and the staging copy must be a real directory under the temporary root before destructive cleanup, so packaging through a symlink alias can no longer delete the original checkout's ignored files or Git logs.
 - Establish save authority across both storage copies: a stale tab can no longer tie or bury a newer acknowledged fallback save after a primary-store recovery, tied divergent copies load with the other preserved for review, preserved recovery records stay visible from both stores, legacy fallback sessions migrate without IndexedDB with the fresher legacy copy selected, and deleting a migrated questionnaire also removes the legacy copies so it cannot return.
 - Preserve every divergent portable-import branch regardless of its save counter, with review plus an import choice for imported copies instead of silent rejection.
 - Avoid false save conflicts in a single tab: queued snapshots carry the acknowledged revision at execution time, and a rejected edit's preservation is awaited and surfaced.

@@ -236,6 +236,50 @@ caseIgnoredInputs() {
   failures=1
 }
 
+# Packaging invoked through an absolute alias of the checkout must stage a real
+# isolated copy: the original's ignored files, node_modules markers and Git
+# logs survive both a successful package and an in-pipeline failure (F15).
+caseAliasPackaging() {
+  local target alias
+  target="$(freshClone alias)"
+  printf 'developer private ignored content\n' > "${target}/developer-fixture.log"
+  mkdir -p "${target}/node_modules/probe"
+  printf 'ignored node_modules marker\n' > "${target}/node_modules/probe/marker.log"
+  alias="${workroot}/absolute-alias"
+  if ! ln -s -- "${target}" "${alias}"; then
+    abortSetup "cannot create the alias fixture"
+  fi
+  originalPreserved() {
+    test -f "${target}/developer-fixture.log" &&
+      test -f "${target}/node_modules/probe/marker.log" &&
+      test -s "${target}/.git/logs/HEAD" &&
+      [[ -z "$(git -C "${target}" status --porcelain)" ]]
+  }
+  if ! bash "${alias}/scripts/package-release.sh" >/dev/null 2>&1; then
+    printf 'guard alias-packaging: successful packaging through the alias failed\n' >&2
+    failures=1
+    return 0
+  fi
+  if ! originalPreserved; then
+    printf 'guard alias-packaging: the original checkout lost ignored files, node_modules markers, or Git logs\n' >&2
+    failures=1
+    return 0
+  fi
+  # A packaging failure that begins after staging cleanup must also leave the
+  # original untouched.
+  if SITE_BASE_PATH='bad/../value' bash "${alias}/scripts/package-release.sh" >/dev/null 2>&1; then
+    printf 'guard alias-packaging: the broken packaging unexpectedly succeeded\n' >&2
+    failures=1
+    return 0
+  fi
+  if ! originalPreserved; then
+    printf 'guard alias-packaging: the failed packaging damaged the original checkout\n' >&2
+    failures=1
+    return 0
+  fi
+  printf 'guard alias-packaging: staged cleanup isolated the original checkout through success and failure\n'
+}
+
 caseTracked
 caseMessage
 caseTag
@@ -246,6 +290,7 @@ caseHiddenIndex
 caseAuthenticatedURL
 caseOwnerMode
 caseUniformMode
+caseAliasPackaging
 caseRequiredFailingSetup
 caseIgnoredInputs
 

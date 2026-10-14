@@ -28,7 +28,7 @@ imports are relative.
 | `site/index.html`, `site/assets/home.js` | Catalog cards, new sessions, recent sessions |
 | `site/wizard.html`, `site/assets/wizard.js` | Questions, section navigation, progress, autosave scheduling, conflict handling, preserved-answer review, completion, downloads, delete control |
 | `site/assets/runtime.js` | Plain JavaScript reconciliation with match diagnostics, section counts, literal-text escaping for answers and preserved copies |
-| `site/assets/storage.js` | Session creation, cryptographic IDs, cross-copy revision authority, atomic recovery reads/merges/commits, deletion markers preserving final removal under quota pressure, navigation position store, recovery records with schema upgrades and cross-store merges, legacy-namespace migration, localStorage fallback, scoped deletion |
+| `site/assets/storage.js` | Session creation, cryptographic IDs, cross-copy revision authority, atomic recovery reads/merges/commits, per-writer fallback recovery rows that survive concurrent tabs, deletion markers preserving final removal under quota pressure with failed primary cleanup reported on every marker branch, navigation position store, recovery records with schema upgrades and cross-store merges, legacy-namespace migration, localStorage fallback, scoped deletion |
 | `site/assets/portable.js` | Bounded gzip/JSON resume snapshots with save revisions, URL-fragment encoding/import |
 | `site/assets/app.css` | Responsive layout and UI styling |
 | `site/404.html` | Deployment-aware recovery from missing URLs |
@@ -38,7 +38,7 @@ imports are relative.
 | `internal/staticapp/core.go` | Build-time template analysis and section metadata |
 | `internal/mdast/` | JSON/YAML loading, question discovery, IDs, merging, fingerprints |
 | `internal/markdown/` | Canonical mdast Markdown rendering with literal-text escaping |
-| `internal/yamlmini/` | Dependency-free JSON-compatible YAML subset with full block scalar semantics |
+| `internal/yamlmini/` | Dependency-free JSON-compatible YAML subset with full block scalar semantics, reference-compatible plain-scalar folding, flow collections, and nested block indents |
 | `scripts/check.sh` | Formatting, race tests, vet, JS tests/syntax, build and artifact smoke checks |
 | `scripts/build-static.sh` | Static build with tracked-source output protection |
 | `scripts/validate-static.py` | Artifact references, compiled slots, catalog parity, no server/Go/WASM assets |
