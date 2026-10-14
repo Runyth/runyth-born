@@ -646,6 +646,33 @@ test("a late stale fallback writer cannot erase another tab's acknowledged addit
   }
 });
 
+test("cloned sessionStorage writer tokens do not share a fallback row", async () => {
+  const mock = await autoStorageMock({ noIndexedDB: true, legacySessions: [] });
+  // Opener-created documents inherit one sessionStorage copy. Two live
+  // documents that see that same token must still write distinct rows (F02).
+  const shared = new Map([["runyth-born.writer", "cloned-from-opener"]]);
+  const openWriter = async (label) => {
+    globalThis.sessionStorage = {
+      getItem: (key) => (shared.has(key) ? shared.get(key) : null),
+      setItem: (key, value) => shared.set(key, String(value)),
+    };
+    return import(`../../site/assets/storage.js?cloned=${label}-${Math.random()}`);
+  };
+  const first = await openWriter("child-a");
+  const second = await openWriter("child-b");
+  await Promise.all([
+    first.saveRecovery("test", { reason: "conflict", entries: [{ label: "Name", answer: "Inherited writer A" }] }),
+    second.saveRecovery("test", { reason: "conflict", entries: [{ label: "Name", answer: "Inherited writer B" }] }),
+  ]);
+  const keys = [...mock.fallback.keys()].filter((key) => key.startsWith(`${sessionKey}test.recovery.`));
+  assert.equal(keys.length, 2, "independently executing documents must not share a replaceable recovery row");
+  const reloaded = await openWriter("reload");
+  const loaded = await reloaded.loadRecovery("test");
+  for (const answer of ["Inherited writer A", "Inherited writer B"]) {
+    assert.ok(loaded.entries.some((entry) => entry.answer === answer), `${answer} must stay reviewable across a reload`);
+  }
+});
+
 test("deleting a session removes every per-writer fallback recovery row", async () => {
   const mock = await autoStorageMock({ noIndexedDB: true, legacySessions: [] });
   const memory = new Map([["runyth-born.writer", "tab-cleanup"]]);

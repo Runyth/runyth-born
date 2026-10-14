@@ -573,31 +573,21 @@ export async function saveRecovery(id, recovery) {
   }
 }
 
-// The fallback store has no transactions, so concurrent tabs must never share
-// one recovery record: each tab persists only its own row, keyed by a token
-// stable for the tab's lifetime, and readers union every row. A later stale
-// writer can then only replace its own row, never another tab's acknowledged
-// additions (F02).
-const WRITER_TOKEN_KEY = "runyth-born.writer";
+// The fallback store has no transactions, so independently executing documents
+// must never share one replaceable recovery row. A token stored in
+// sessionStorage is not a unique writer: opener-created documents inherit a
+// copy of that storage, and a response-policy mismatch can then separate
+// their opener groups while leaving the copied token in place (F02). Each
+// live document therefore generates its own identity in module memory.
+// Reloads create a new identity; readers still union every existing row.
 let fallbackWriterToken = null;
 
 function writerToken() {
-  if (fallbackWriterToken) {
-    return fallbackWriterToken;
+  if (!fallbackWriterToken) {
+    fallbackWriterToken = globalThis.crypto?.randomUUID?.()
+      ?? `w${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`;
   }
-  try {
-    const stored = globalThis.sessionStorage?.getItem(WRITER_TOKEN_KEY);
-    if (stored) {
-      fallbackWriterToken = stored;
-      return stored;
-    }
-  } catch { /* sessionStorage may be blocked; a process-local token still isolates this tab. */ }
-  const generated = globalThis.crypto?.randomUUID?.() ?? `w${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`;
-  fallbackWriterToken = generated;
-  try {
-    globalThis.sessionStorage?.setItem(WRITER_TOKEN_KEY, generated);
-  } catch { /* The token stays process-local when sessionStorage refuses it. */ }
-  return generated;
+  return fallbackWriterToken;
 }
 
 function recoveryRowPrefix(id) {
