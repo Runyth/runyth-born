@@ -1,14 +1,18 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-declare -r script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-declare -r project_root="$(cd -- "${script_dir}/.." && pwd)"
+# The roots are canonicalized physically so invoking this script through an
+# absolute checkout alias cannot smuggle the alias path into staging (F15);
+# packaging always stages a real isolated copy of the physical checkout.
+declare -r script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+declare -r project_root="$(cd -- "${script_dir}/.." && pwd -P)"
 declare -r version="$(tr -d '[:space:]' < "${project_root}/VERSION")"
 declare -r release_dir="${project_root}/release"
-declare -r temporary_root="$(mktemp -d)"
+declare -r temporary_root="$(realpath -m -- "$(mktemp -d)")"
 declare -r source_name="runyth-born-${version}-src"
 declare -r runtime_name="runyth-born-${version}-run"
 declare -r docs_name="runyth-born-${version}-doc"
+declare -r staged_source="${temporary_root}/${source_name}"
 trap 'rm -rf -- "${temporary_root}"' EXIT
 
 cd -- "${project_root}"
@@ -29,19 +33,33 @@ rm -rf -- "${release_dir}"
 mkdir -p -- "${release_dir}"
 
 # Produce the committed tree for every bundle: untracked and ignored files can
-# never泄漏 into the Source, Runtime, or Documentation archives (F12), and the
+# never leak into the Source, Runtime, or Documentation archives (F12), and the
 # staged files are verified byte for byte and mode for mode against the commit
 # below, so hidden index state such as assume-unchanged cannot substitute
 # altered content (F12).
-cp -a -- "${project_root}" "${temporary_root}/${source_name}"
-rm -rf -- "${temporary_root}/${source_name}/dist" "${temporary_root}/${source_name}/release" "${temporary_root}/${source_name}/node_modules"
+#
+# The staged copy must be a real isolated directory under the temporary root,
+# never a symlink to the original checkout: the destructive cleanup below must
+# only ever touch the staging copy (F15).
+mkdir -p -- "${staged_source}"
+cp -a -- "${project_root}/." "${staged_source}/"
+if [[ -L "${staged_source}" || ! -d "${staged_source}" || ! -d "${staged_source}/.git" ]]; then
+  printf 'The staged source tree is not an isolated physical directory\n' >&2
+  exit 1
+fi
+declare -r staged_physical="$(cd -- "${staged_source}" && pwd -P)"
+if [[ "${staged_physical}/" != "${temporary_root}/"* ]] || [[ "${staged_physical}" == "${project_root}/"* ]] || [[ "${staged_physical}" == "${project_root}" ]]; then
+  printf 'The staged source tree is not isolated from the packaging root\n' >&2
+  exit 1
+fi
+rm -rf -- "${staged_source}/dist" "${staged_source}/release" "${staged_source}/node_modules"
 
 (
-  cd -- "${temporary_root}/${source_name}"
+  cd -- "${staged_source}"
   git clean -xdfq
   rm -rf -- .git/logs .git/COMMIT_EDITMSG .git/MERGE_MSG .git/ORIG_HEAD .git/FETCH_HEAD .git/gc.log .git/gc.pid
 )
-python3 - "${temporary_root}/${source_name}/.git/config" <<'PY'
+python3 - "${staged_source}/.git/config" <<'PY'
 import re
 import sys
 from pathlib import Path
@@ -57,14 +75,14 @@ PY
 # Verify the staged tree against the committed revision: every tracked file
 # must have the committed bytes and the committed mode (F12).
 (
-  cd -- "${temporary_root}/${source_name}"
+  cd -- "${staged_source}"
   declare -r staged_dir="${PWD}"
   bash scripts/verify-committed-tree.sh "${staged_dir}" "${project_root}" || exit 1
 )
 
 declare -r dist_dir="${temporary_root}/dist"
-SITE_BASE_PATH="${SITE_BASE_PATH:-}" bash "${temporary_root}/${source_name}/scripts/build-static.sh" "${dist_dir}"
-python3 "${temporary_root}/${source_name}/scripts/validate-static.py" "${dist_dir}"
+SITE_BASE_PATH="${SITE_BASE_PATH:-}" bash "${staged_source}/scripts/build-static.sh" "${dist_dir}"
+python3 "${staged_source}/scripts/validate-static.py" "${dist_dir}"
 
 mkdir -p -- "${temporary_root}/${runtime_name}" "${temporary_root}/${docs_name}"
 cp -a -- "${dist_dir}/." "${temporary_root}/${runtime_name}/"
@@ -78,9 +96,9 @@ for documentation_file in \
   AI_TEMPLATE_PROMPT.md \
   RELEASE_VALIDATION.md \
   LICENSE; do
-  cp -- "${temporary_root}/${source_name}/${documentation_file}" "${temporary_root}/${docs_name}/${documentation_file}"
+  cp -- "${staged_source}/${documentation_file}" "${temporary_root}/${docs_name}/${documentation_file}"
 done
-cp -a -- "${temporary_root}/${source_name}/docs" "${temporary_root}/${docs_name}/docs"
+cp -a -- "${staged_source}/docs" "${temporary_root}/${docs_name}/docs"
 
 (
   cd -- "${temporary_root}"
@@ -92,7 +110,7 @@ cp -a -- "${temporary_root}/${source_name}/docs" "${temporary_root}/${docs_name}
 # Verify the published archives after creation: integrity, inventories,
 # shipped bytes, and no server, Go, or WebAssembly assets in the runtime
 # bundle (F12).
-python3 - "${release_dir}" "${version}" "${revision}" "${dist_dir}" "${temporary_root}/${source_name}" "${temporary_root}/${docs_name}" <<'PY'
+python3 - "${release_dir}" "${version}" "${revision}" "${dist_dir}" "${staged_source}" "${temporary_root}/${docs_name}" <<'PY'
 import hashlib
 import sys
 import zipfile

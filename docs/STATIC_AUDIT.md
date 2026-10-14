@@ -25,6 +25,7 @@ Deployment preparation continued on 2026-10-05.
 | Uppercase template extensions and URL punctuation were mishandled by publication | Copy extensions case-insensitively and encode compiled-template URL paths. Reject generated/reserved filenames. |
 | Relative 404 links broke on nested missing paths | Generate a deployment base from Pages configuration; preserve relative normal-page URLs. |
 | Output overrides could delete source directories | Reject tracked-source overlaps by validating the resolved destination against the tracked inventory, project ancestors, and the Git directory; without Git, only the default `dist` directory is accepted in-repository. |
+| Packaging through a checkout symlink could clean the original source | Physically canonicalize both packaging roots and verify the staging copy is a real isolated directory under the temporary root before any destructive cleanup. |
 | Artifact validation covered only HTML/WASM, not the browser's full dependencies | Validate module imports, compiled template fingerprints/slots, symlinks, and absence of Go/WASM/executable/server files. |
 | Future CI changes could break browser-only behavior without detection | Add pinned development-only Chromium tests to CI, Pages, and release workflows; exclude test dependencies from published runtime/source bundles. |
 | The browser harness rewrote 404 base URLs and could hide a publication error | Build root and project artifacts independently, serve every file unchanged, and verify the exact 404 response and recovery URL. |
