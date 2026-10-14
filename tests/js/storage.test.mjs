@@ -70,7 +70,7 @@ async function storageMock() {
 // database keeps its own stores, which lets tests seed the legacy namespace.
 // `noIndexedDB: true` removes IndexedDB entirely, matching privacy settings
 // where only the localStorage fallback works.
-async function autoStorageMock({ storedSessions = [], failTransactions = false, abortAfterPut = false, legacySessions = [], legacyFallbackSessions = [], noIndexedDB = false } = {}) {
+async function autoStorageMock({ storedSessions = [], failTransactions = false, failDeletionTransaction = false, abortAfterPut = false, legacySessions = [], legacyFallbackSessions = [], noIndexedDB = false } = {}) {
   const fallback = new Map();
   globalThis.localStorage = {
     setItem: (key, value) => fallback.set(key, String(value)),
@@ -105,9 +105,14 @@ async function autoStorageMock({ storedSessions = [], failTransactions = false, 
         open.result = {
           objectStoreNames: { contains: (store) => storesFor(name).has(store) },
           close() {},
-          transaction() {
+          transaction(storeNames) {
             if (failTransactions) {
               throw new Error("forced IndexedDB failure");
+            }
+            if (failDeletionTransaction && Array.isArray(storeNames) && storeNames.includes("deleted")) {
+              // Models a transient failure of the primary deletion transaction
+              // while ordinary reads stay available (F11).
+              throw new Error("forced primary deletion failure");
             }
             const currentTransaction = {
               error: null,
@@ -327,10 +332,15 @@ test("a fallback old-schema recovery record upgrades through a fallback write", 
     questions: [{ id: "q1", label: "Name", answer: "Old fallback answer" }],
   }));
   await mock.module.saveRecovery("test", { reason: "conflict", entries: [{ label: "Age", answer: "Rejected edit" }] });
-  const stored = JSON.parse(mock.fallback.get(sessionKey + "test.recovery"));
-  assert.equal(stored.questions, undefined);
-  assert.ok(stored.entries.some((entry) => entry.answer === "Old fallback answer"));
-  assert.ok(stored.entries.some((entry) => entry.answer === "Rejected edit"));
+  // The legacy shared row stays intact; the tab writes only its own row, and
+  // the reviewable union keeps both answers (F02).
+  const legacy = JSON.parse(mock.fallback.get(sessionKey + "test.recovery"));
+  assert.equal(legacy.questions[0].answer, "Old fallback answer");
+  const ownRowKey = [...mock.fallback.keys()].find((key) => key.startsWith(sessionKey + "test.recovery."));
+  assert.ok(ownRowKey, "the tab records its preservation in its own row");
+  const loaded = await mock.module.loadRecovery("test");
+  assert.ok(loaded.entries.some((entry) => entry.answer === "Old fallback answer"));
+  assert.ok(loaded.entries.some((entry) => entry.answer === "Rejected edit"));
 });
 
 test("a clock-rolled-back fallback recovery record is never suppressed", async () => {
@@ -571,7 +581,8 @@ test("concurrent recovery writes keep every acknowledged entry", async () => {
       mock.module.saveRecovery("test", { reason: "conflict", entries: [{ label: "Name", answer: "Rejected edit from tab A" }] }),
       mock.module.saveRecovery("test", { reason: "conflict", entries: [{ label: "Name", answer: "Rejected edit from tab B" }] }),
     ]);
-    const loaded = await mock.module.loadRecovery("test");
+  const loaded = await mock.module.loadRecovery("test");
+
     assert.ok(loaded.entries.some((entry) => entry.answer === "Rejected edit from tab A"), `round ${round}: tab A's acknowledged entry was lost`);
     assert.ok(loaded.entries.some((entry) => entry.answer === "Rejected edit from tab B"), `round ${round}: tab B's acknowledged entry was lost`);
   }
@@ -589,6 +600,65 @@ test("a recovery write that read stale state re-merges before conceding", async 
   for (const answer of ["Base preserved answer", "Rejected edit from tab A", "Rejected edit from tab B"]) {
     assert.ok(loaded.entries.some((entry) => entry.answer === answer), `${answer} must survive concurrent writers`);
   }
+});
+
+test("eight concurrent fallback writers all keep their acknowledged additions", async () => {
+  await autoStorageMock({ noIndexedDB: true, legacySessions: [] });
+  const writers = [];
+  for (let index = 0; index < 8; index += 1) {
+    const memory = new Map([["runyth-born.writer", `tab-${index}`]]);
+    globalThis.sessionStorage = {
+      getItem: (key) => (memory.has(key) ? memory.get(key) : null),
+      setItem: (key, value) => memory.set(key, String(value)),
+    };
+    writers.push(await import(`../../site/assets/storage.js?writer=${index}-${Math.random()}`));
+  }
+  await Promise.all(writers.map((writer, index) => writer.saveRecovery("test", {
+    reason: "conflict",
+    entries: [{ label: "Name", answer: `Preserved answer ${index}` }],
+  })));
+  const loaded = await writers[0].loadRecovery("test");
+  for (let index = 0; index < 8; index += 1) {
+    assert.ok(loaded.entries.some((entry) => entry.answer === `Preserved answer ${index}`), `acknowledged answer ${index} must survive every other writer`);
+  }
+});
+
+test("a late stale fallback writer cannot erase another tab's acknowledged addition", async () => {
+  await autoStorageMock({ noIndexedDB: true, legacySessions: [] });
+  const openWriter = async (token) => {
+    const memory = new Map([["runyth-born.writer", token]]);
+    globalThis.sessionStorage = {
+      getItem: (key) => (memory.has(key) ? memory.get(key) : null),
+      setItem: (key, value) => memory.set(key, String(value)),
+    };
+    return import(`../../site/assets/storage.js?writer=${token}-${Math.random()}`);
+  };
+  const first = await openWriter("tab-early");
+  const second = await openWriter("tab-late");
+  await first.saveRecovery("test", { reason: "conflict", entries: [{ label: "Name", answer: "Early acknowledged answer" }] });
+  await second.saveRecovery("test", { reason: "conflict", entries: [{ label: "Name", answer: "Late acknowledged answer" }] });
+  // The early tab saves again from its stale view; it may only rewrite its
+  // own row (F02).
+  await first.saveRecovery("test", { reason: "conflict", entries: [{ label: "Age", answer: "Early second answer" }] });
+  const loaded = await first.loadRecovery("test");
+  for (const answer of ["Early acknowledged answer", "Late acknowledged answer", "Early second answer"]) {
+    assert.ok(loaded.entries.some((entry) => entry.answer === answer), `${answer} must remain reviewable`);
+  }
+});
+
+test("deleting a session removes every per-writer fallback recovery row", async () => {
+  const mock = await autoStorageMock({ noIndexedDB: true, legacySessions: [] });
+  const memory = new Map([["runyth-born.writer", "tab-cleanup"]]);
+  globalThis.sessionStorage = {
+    getItem: (key) => (memory.has(key) ? memory.get(key) : null),
+    setItem: (key, value) => memory.set(key, String(value)),
+  };
+  await mock.module.saveRecovery("test", { reason: "conflict", entries: [{ label: "Name", answer: "Row to be removed" }] });
+  mock.fallback.set(sessionKey + "test.recovery.other-tab", JSON.stringify({ id: "test", entries: [{ label: "Name", answer: "Other tab answer" }] }));
+  await mock.module.deleteSession("test");
+  const survivors = [...mock.fallback.keys()].filter((key) => key.startsWith(sessionKey + "test.recovery"));
+  assert.deepEqual(survivors, [], "no recovery row survives the deletion");
+  assert.equal(await mock.module.loadRecovery("test"), null);
 });
 
 test("a recovery write after deletion is rejected and stores nothing", async () => {
@@ -643,6 +713,47 @@ test("deletion retries the marker after freeing fallback space and blocks stale 
     (error) => error.name === "SessionDeletedError",
   );
   assert.equal(mock.fallback.has(sessionKey + "test"), false, "a stale writer cannot resurrect the deleted questionnaire");
+});
+
+test("a failed primary deletion is reported even when the fallback marker was recorded first", async () => {
+  const mock = await autoStorageMock({ storedSessions: [{ id: "test", revision: 1, questions: [{ label: "Name", answer: "Primary answer surviving failed deletion" }] }], failDeletionTransaction: true });
+  mock.fallback.set(sessionKey + "test", JSON.stringify({ id: "test", revision: 1 }));
+  await assert.rejects(
+    () => mock.module.deleteSession("test"),
+    (error) => /every stored copy/u.test(error.message),
+    "a surviving primary copy must not be acknowledged as deleted",
+  );
+  assert.equal(mock.stores.get("sessions").has("test"), true, "the primary record survives the failed cleanup");
+  assert.equal(mock.fallback.has(sessionKey + "test.deleted"), true, "the fallback marker was recorded before the cleanup");
+});
+
+test("a failed primary deletion is reported when the marker retry succeeds after freeing fallback space", async () => {
+  const mock = await autoStorageMock({ storedSessions: [{ id: "test", revision: 1, questions: [{ label: "Name", answer: "Primary answer surviving failed deletion" }] }], failDeletionTransaction: true });
+  mock.fallback.set(sessionKey + "test", JSON.stringify({ id: "test", revision: 1 }));
+  // Native quota pressure: the first marker write fails while the fallback
+  // mirror occupies space and succeeds once the removal frees it (F11).
+  const plainSetItem = globalThis.localStorage.setItem.bind(globalThis.localStorage);
+  const occupied = () => [...mock.fallback.keys()].some((key) =>
+    key.startsWith(sessionKey) && !key.endsWith(".deleted") && !key.endsWith(".recovery"));
+  globalThis.localStorage.setItem = (key, value) => {
+    if (key === sessionKey + "test.deleted" && occupied()) {
+      throw new Error("QuotaExceededError");
+    }
+    plainSetItem(key, value);
+  };
+  try {
+    await assert.rejects(
+      () => mock.module.deleteSession("test"),
+      (error) => /every stored copy/u.test(error.message),
+      "the marker retry must not acknowledge a failed primary cleanup",
+    );
+  } finally {
+    globalThis.localStorage.setItem = plainSetItem;
+  }
+  assert.equal(mock.stores.get("sessions").has("test"), true, "the primary record survives the failed cleanup");
+  assert.equal(mock.fallback.has(sessionKey + "test.deleted"), true, "the retried marker is recorded");
+  const marker = JSON.parse(mock.fallback.get(sessionKey + "test.deleted"));
+  assert.deepEqual(Object.keys(marker).sort(), ["deleted_at", "id"], "the marker holds no answer content");
 });
 
 test("deletion without any durable marker reports incomplete removal", async () => {
