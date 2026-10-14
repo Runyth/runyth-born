@@ -27,7 +27,7 @@ The gate verifies:
 - absence of Go/Docker/server deployment files from the runtime artifact;
 - absence of WebAssembly and `wasm_exec.js`;
 - generated answer-slot integrity and local JavaScript module imports;
-- release-guard canaries (`scripts/test-release-guards.sh`), which run the real packaging in disposable clones against fictional canaries for tracked content, commit messages, tag messages, binary blobs, dangling stored blobs, author headers, hidden index tricks, and ignored bundle inputs.
+- release-guard canaries (`scripts/test-release-guards.sh`), which run the real packaging in disposable clones against fictional canaries for tracked content, commit messages, tag messages, binary blobs, dangling stored blobs, author headers, hidden index tricks, ignored bundle inputs, checkout aliases, nested absolute `.git` directory symlinks, and an absolute `core.worktree` redirect on both successful and failing package paths.
 
 ## Automated browser acceptance
 

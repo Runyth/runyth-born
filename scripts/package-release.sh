@@ -40,25 +40,137 @@ mkdir -p -- "${release_dir}"
 #
 # The staged copy must be a real isolated directory under the temporary root,
 # never a symlink to the original checkout: the destructive cleanup below must
-# only ever touch the staging copy (F15).
+# only ever touch the staging copy (F15). A nested .git directory symlink is a
+# valid Git layout that cp -a preserves; -d follows it, so cleanup would then
+# delete the original reflogs. Replace that link with a physical copy and
+# prove the copy stays inside staging before any metadata removal.
 mkdir -p -- "${staged_source}"
 cp -a -- "${project_root}/." "${staged_source}/"
-if [[ -L "${staged_source}" || ! -d "${staged_source}" || ! -d "${staged_source}/.git" ]]; then
+if [[ -L "${staged_source}/.git" ]]; then
+  if [[ ! -d "${staged_source}/.git" ]]; then
+    printf 'The staged Git directory is a symlink and is not an isolated directory\n' >&2
+    exit 1
+  fi
+  resolved_git="$(cd -- "${staged_source}/.git" && pwd -P)"
+  rm -- "${staged_source}/.git"
+  mkdir -p -- "${staged_source}/.git"
+  cp -a -- "${resolved_git}/." "${staged_source}/.git/"
+fi
+if [[ -L "${staged_source}" || -L "${staged_source}/.git" || ! -d "${staged_source}" || ! -d "${staged_source}/.git" ]]; then
   printf 'The staged source tree is not an isolated physical directory\n' >&2
   exit 1
 fi
 declare -r staged_physical="$(cd -- "${staged_source}" && pwd -P)"
+declare -r staged_git_physical="$(cd -- "${staged_source}/.git" && pwd -P)"
 if [[ "${staged_physical}/" != "${temporary_root}/"* ]] || [[ "${staged_physical}" == "${project_root}/"* ]] || [[ "${staged_physical}" == "${project_root}" ]]; then
   printf 'The staged source tree is not isolated from the packaging root\n' >&2
   exit 1
 fi
+if [[ "${staged_git_physical}/" != "${staged_physical}/"* ]]; then
+  printf 'The staged Git directory is not isolated from the original checkout\n' >&2
+  exit 1
+fi
 rm -rf -- "${staged_source}/dist" "${staged_source}/release" "${staged_source}/node_modules"
 
-(
-  cd -- "${staged_source}"
-  git clean -xdfq
-  rm -rf -- .git/logs .git/COMMIT_EDITMSG .git/MERGE_MSG .git/ORIG_HEAD .git/FETCH_HEAD .git/gc.log .git/gc.pid
-)
+# A copied core.worktree can name the original checkout. Git honors that
+# setting over the shell's current directory, so cleanup must select and
+# prove its working tree before deleting anything. Only staged configuration
+# files are rewritten; the invoking checkout's configuration is never opened
+# for writing (F15).
+sanitize_staged_worktree_config() {
+  local config parent
+  if [[ -L "${staged_source}/.git/config" || ! -f "${staged_source}/.git/config" ]]; then
+    printf 'The staged Git configuration is not an isolated file\n' >&2
+    exit 1
+  fi
+  while IFS= read -r -d '' config; do
+    if [[ -L "${config}" ]]; then
+      printf 'The staged Git configuration is not an isolated file\n' >&2
+      exit 1
+    fi
+    parent="$(cd -- "$(dirname -- "${config}")" && pwd -P)"
+    if [[ "${parent}" != "${staged_git_physical}" && "${parent}/" != "${staged_git_physical}/"* ]]; then
+      printf 'The staged Git configuration is not an isolated file\n' >&2
+      exit 1
+    fi
+    if git config --file "${config}" --get-all core.worktree >/dev/null 2>&1; then
+      git config --file "${config}" --unset-all core.worktree
+    fi
+  done < <(find -P "${staged_source}/.git" -type f \( -name config -o -name config.worktree \) -print0)
+}
+
+require_staged_worktree() {
+  local toplevel gitdir toplevel_physical gitdir_physical
+  toplevel="$(env -u GIT_DIR -u GIT_WORK_TREE git --git-dir="${staged_git_physical}" --work-tree="${staged_physical}" rev-parse --show-toplevel)"
+  toplevel_physical="$(cd -- "${toplevel}" && pwd -P)"
+  if [[ "${toplevel_physical}" != "${staged_physical}" ]]; then
+    printf 'Refusing to clean a Git working tree outside the staged copy\n' >&2
+    exit 1
+  fi
+  gitdir="$(env -u GIT_DIR -u GIT_WORK_TREE git --git-dir="${staged_git_physical}" --work-tree="${staged_physical}" rev-parse --absolute-git-dir)"
+  gitdir_physical="$(cd -- "${gitdir}" && pwd -P)"
+  if [[ "${gitdir_physical}" != "${staged_git_physical}" ]]; then
+    printf 'Refusing to clean a Git directory outside the staged copy\n' >&2
+    exit 1
+  fi
+  toplevel="$(env -u GIT_DIR -u GIT_WORK_TREE git -C "${staged_physical}" rev-parse --show-toplevel)"
+  toplevel_physical="$(cd -- "${toplevel}" && pwd -P)"
+  if [[ "${toplevel_physical}" != "${staged_physical}" ]]; then
+    printf 'Refusing to clean a Git working tree outside the staged copy\n' >&2
+    exit 1
+  fi
+}
+
+# Removes Git metadata only when the path is a real entry inside the physical
+# staged Git directory. A symlink is unlinked and never followed (F15).
+remove_isolated_git_metadata() {
+  local git_dir="${1}"
+  local git_physical entry path physical parent
+  if [[ -L "${git_dir}" || ! -d "${git_dir}" ]]; then
+    printf 'Refusing to clean Git metadata outside the staged copy\n' >&2
+    exit 1
+  fi
+  git_physical="$(cd -- "${git_dir}" && pwd -P)"
+  if [[ "${git_physical}" != "${staged_git_physical}" ]]; then
+    printf 'Refusing to clean Git metadata outside the staged copy\n' >&2
+    exit 1
+  fi
+  for entry in logs COMMIT_EDITMSG MERGE_MSG ORIG_HEAD FETCH_HEAD gc.log gc.pid; do
+    path="${git_dir}/${entry}"
+    if [[ -L "${path}" ]]; then
+      rm -- "${path}"
+      continue
+    fi
+    if [[ -d "${path}" ]]; then
+      physical="$(cd -- "${path}" && pwd -P)"
+      if [[ "${physical}/" != "${git_physical}/"* ]]; then
+        printf 'Refusing to clean Git metadata outside the staged copy\n' >&2
+        exit 1
+      fi
+      rm -rf -- "${path}"
+      continue
+    fi
+    if [[ -e "${path}" ]]; then
+      parent="$(cd -- "$(dirname -- "${path}")" && pwd -P)"
+      if [[ "${parent}" != "${git_physical}" ]]; then
+        printf 'Refusing to clean Git metadata outside the staged copy\n' >&2
+        exit 1
+      fi
+      rm -f -- "${path}"
+    fi
+  done
+}
+
+sanitize_staged_worktree_config
+require_staged_worktree
+env -u GIT_DIR -u GIT_WORK_TREE \
+  git --git-dir="${staged_git_physical}" --work-tree="${staged_physical}" \
+  clean -xdfq
+remove_isolated_git_metadata "${staged_source}/.git"
+if [[ -L "${staged_source}/.git/config" ]]; then
+  printf 'The staged Git configuration is not an isolated file\n' >&2
+  exit 1
+fi
 python3 - "${staged_source}/.git/config" <<'PY'
 import re
 import sys
