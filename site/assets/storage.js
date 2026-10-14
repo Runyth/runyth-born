@@ -573,68 +573,117 @@ export async function saveRecovery(id, recovery) {
   }
 }
 
-// The fallback store has no transactions, so a concurrent tab could slip its
-// write between this read and write. Each attempt merges the freshly read
-// record, writes, and then re-checks: when a cross-tab writer dropped our
-// entries, the next round reads its acknowledged state and writes the union
-// (F02).
-async function fallbackSaveRecovery(id, incoming) {
-  const key = `${FALLBACK_PREFIX}${id}.recovery`;
-  for (let attempt = 0; attempt < 4; attempt += 1) {
-    if (readFallbackTombstone(id)) {
-      throw new SessionDeletedError();
-    }
-    let current = null;
-    try {
-      const raw = localStorage.getItem(key);
-      current = raw ? JSON.parse(raw) : null;
-    } catch {
-      current = null;
-    }
-    const merged = mergeRecoveryRecords(current, incoming, id);
-    try {
-      localStorage.setItem(key, JSON.stringify(merged));
-    } catch (fallbackError) {
-      throw new Error(`Could not preserve the answers locally: ${fallbackError.message}`);
-    }
-    await new Promise((resolve) => setTimeout(resolve, attempt === 0 ? 0 : 60));
-    let rechecked = null;
-    try {
-      const raw = localStorage.getItem(key);
-      rechecked = raw ? JSON.parse(raw) : null;
-    } catch {
-      rechecked = null;
-    }
-    const storedAnswers = new Set((rechecked?.entries || []).map(coveredEntry));
-    if (!incoming.entries.some((entry) => !storedAnswers.has(coveredEntry(entry)))) {
-      return normalizeRecoveryRecord(rechecked, id) ?? mergeRecoveryRecords(current, incoming, id);
-    }
+// The fallback store has no transactions, so concurrent tabs must never share
+// one recovery record: each tab persists only its own row, keyed by a token
+// stable for the tab's lifetime, and readers union every row. A later stale
+// writer can then only replace its own row, never another tab's acknowledged
+// additions (F02).
+const WRITER_TOKEN_KEY = "runyth-born.writer";
+let fallbackWriterToken = null;
+
+function writerToken() {
+  if (fallbackWriterToken) {
+    return fallbackWriterToken;
   }
-  throw new Error("Could not preserve the answers: another writer keeps replacing the record");
+  try {
+    const stored = globalThis.sessionStorage?.getItem(WRITER_TOKEN_KEY);
+    if (stored) {
+      fallbackWriterToken = stored;
+      return stored;
+    }
+  } catch { /* sessionStorage may be blocked; a process-local token still isolates this tab. */ }
+  const generated = globalThis.crypto?.randomUUID?.() ?? `w${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`;
+  fallbackWriterToken = generated;
+  try {
+    globalThis.sessionStorage?.setItem(WRITER_TOKEN_KEY, generated);
+  } catch { /* The token stays process-local when sessionStorage refuses it. */ }
+  return generated;
 }
 
-function coveredEntry(entry) {
-  return [entry.id, entry.fallback_id, entry.label, (entry.breadcrumb || []).join("\u0000"), entry.answer].join("\u0000");
+function recoveryRowPrefix(id) {
+  return `${FALLBACK_PREFIX}${id}.recovery`;
+}
+
+// Reads every fallback recovery row for an identifier: the legacy shared row
+// and each per-writer row, skipping malformed records (F02).
+function readFallbackRecoveryRows(id) {
+  const rows = [];
+  const prefix = recoveryRowPrefix(id);
+  try {
+    for (let index = 0; index < localStorage.length; index += 1) {
+      const key = localStorage.key(index);
+      if (!key || (key !== prefix && !key.startsWith(`${prefix}.`))) {
+        continue;
+      }
+      try {
+        const raw = localStorage.getItem(key);
+        if (raw) {
+          rows.push(JSON.parse(raw));
+        }
+      } catch { /* A malformed row cannot hide the other writers' rows. */ }
+    }
+  } catch { /* Fallback storage is unavailable, so no fallback rows exist. */ }
+  return rows;
+}
+
+function removeFallbackRecoveryRows(id) {
+  for (const prefix of [FALLBACK_PREFIX, LEGACY_FALLBACK_PREFIX]) {
+    const rowPrefix = `${prefix}${id}.recovery`;
+    const keys = [];
+    try {
+      for (let index = 0; index < localStorage.length; index += 1) {
+        const key = localStorage.key(index);
+        if (key === rowPrefix || key?.startsWith(`${rowPrefix}.`)) {
+          keys.push(key);
+        }
+      }
+      for (const key of keys) {
+        localStorage.removeItem(key);
+      }
+    } catch { /* Fallback storage is unavailable, so it held no removable copies. */ }
+  }
+}
+
+async function fallbackSaveRecovery(id, incoming) {
+  const key = `${recoveryRowPrefix(id)}.${writerToken()}`;
+  if (readFallbackTombstone(id)) {
+    throw new SessionDeletedError();
+  }
+  let ownRow = null;
+  try {
+    const raw = localStorage.getItem(key);
+    ownRow = raw ? JSON.parse(raw) : null;
+  } catch {
+    ownRow = null;
+  }
+  const merged = mergeRecoveryRecords(ownRow, incoming, id);
+  try {
+    localStorage.setItem(key, JSON.stringify(merged));
+  } catch (fallbackError) {
+    throw new Error(`Could not preserve the answers locally: ${fallbackError.message}`);
+  }
+  if (readFallbackTombstone(id)) {
+    // A deletion landed while this row was written; drop it so a deleted
+    // questionnaire cannot regain preserved answers (F11).
+    try { localStorage.removeItem(key); } catch { /* already gone */ }
+    throw new SessionDeletedError();
+  }
+  return merged;
 }
 
 export async function loadRecovery(id) {
-  // Both copies are consulted even when the primary read succeeds, so a
-  // preserved record acknowledged through the fallback stays reviewable after
-  // the primary store recovers (F02).
-  let indexedRecord = null;
+  // Every copy is consulted: the primary record, the legacy shared fallback
+  // row, and each tab's own fallback row, so an addition acknowledged by any
+  // writer stays reviewable. The fold normalizes every stored shape (F02).
+  const records = [];
   try {
-    indexedRecord = await getRecord(RECOVERY_STORE_NAME, id);
-  } catch {
-    indexedRecord = null;
-  }
-  let fallbackRecord = null;
-  try {
-    const raw = localStorage.getItem(`${FALLBACK_PREFIX}${id}.recovery`);
-    fallbackRecord = raw ? JSON.parse(raw) : null;
-  } catch {
-    fallbackRecord = null;
-  }
-  return mergeRecoveryRecords(indexedRecord, fallbackRecord, id);
+    const indexed = await getRecord(RECOVERY_STORE_NAME, id);
+    if (indexed) {
+      records.push(indexed);
+    }
+  } catch { /* The primary store is unavailable; fallback rows still count. */ }
+  records.push(...readFallbackRecoveryRows(id));
+  return records.reduce((merged, record) => mergeRecoveryRecords(merged, record, id), null);
 }
 
 // Normalizes any stored recovery shape to the current `entries` contract.
@@ -694,9 +743,7 @@ export async function deleteRecovery(id) {
       return state.result;
     });
   } catch { /* The preserved copy may only exist in the fallback store. */ }
-  try {
-    localStorage.removeItem(`${FALLBACK_PREFIX}${id}.recovery`);
-  } catch { /* Fallback storage is unavailable; nothing to remove. */ }
+  removeFallbackRecoveryRows(id);
 }
 
 // Removes every stored copy of a questionnaire: the session, its navigation
@@ -747,10 +794,12 @@ export async function deleteSession(id) {
   }
   try {
     for (const prefix of [FALLBACK_PREFIX, LEGACY_FALLBACK_PREFIX]) {
-      for (const suffix of ["", ".position", ".recovery"]) {
+      for (const suffix of ["", ".position"]) {
         localStorage.removeItem(`${prefix}${id}${suffix}`);
       }
     }
+    // Recovery rows include the legacy shared row and every per-writer row.
+    removeFallbackRecoveryRows(id);
   } catch { /* Fallback storage is unavailable, so it held no removable copies. */ }
   if (durableIndexedDBMarker || readFallbackTombstone(id)) {
     if (!removedIndexedDB) {
@@ -763,6 +812,11 @@ export async function deleteSession(id) {
   } catch { /* The fallback marker could not be recorded under storage pressure. */ }
   if (!readFallbackTombstone(id)) {
     throw new Error("Could not record a durable deletion marker; the questionnaire may be recreated by an already-queued writer");
+  }
+  if (!removedIndexedDB) {
+    // The durable invalidation marker alone does not erase surviving primary
+    // content: a still-readable session copy is an incomplete deletion (F11).
+    throw new Error("Could not delete every stored copy of this questionnaire");
   }
 }
 
@@ -928,7 +982,7 @@ function fallbackList() {
   const sessions = [];
   for (let index = 0; index < localStorage.length; index += 1) {
     const key = localStorage.key(index);
-    if (!key?.startsWith(FALLBACK_PREFIX) || key.endsWith(".position") || key.endsWith(".recovery") || key.endsWith(".deleted")) {
+    if (!key?.startsWith(FALLBACK_PREFIX) || key.endsWith(".position") || key.includes(".recovery") || key.endsWith(".deleted")) {
       continue;
     }
     try {
