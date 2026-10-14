@@ -496,6 +496,40 @@ func TestRepeatedMappingKeysKeepTheLastValue(t *testing.T) {
 	}
 }
 
+func TestQuotedMappingKeysMatchReference(t *testing.T) {
+	// F08: a quote starts a mapping key when a value indicator follows the
+	// closing quote, at the root and inside a nested block.
+	for _, doc := range []wantDocument{
+		{"\"key\": value\n", map[string]any{"key": "value"}},
+		{"'key': value\n", map[string]any{"key": "value"}},
+		{"\"type\": root\n", map[string]any{"type": "root"}},
+		{"'type': root\n", map[string]any{"type": "root"}},
+		{"value:\n  \"key\": value\n", map[string]any{"value": map[string]any{"key": "value"}}},
+		{"value:\n  'key': value\n", map[string]any{"value": map[string]any{"key": "value"}}},
+		{"\"a:b\": 1\n", map[string]any{"a:b": 1}},
+		{"'it''s': value\n", map[string]any{"it's": "value"}},
+		{"- \"key\": value\n", []any{map[string]any{"key": "value"}}},
+		{"\"just a scalar\"\n", "just a scalar"},
+		{"value:\n  \"d\"\n", map[string]any{"value": "d"}},
+		{"\"a\": 1\na: 2\n", map[string]any{"a": 2}},
+	} {
+		assertWantDocument(t, doc)
+	}
+}
+
+func TestMalformedUnicodeWhitespaceReturnsValidationError(t *testing.T) {
+	// F08: NBSP plus a tab is not a token. It must be a validation error,
+	// not an index panic, at the root and as a nested block line.
+	for _, source := range []string{
+		"\u00a0\t",
+		"value:\n  \u00a0\t\n",
+	} {
+		if _, err := Parse([]byte(source)); err == nil {
+			t.Fatalf("accepted malformed whitespace %q", source)
+		}
+	}
+}
+
 func TestBlockScalarValuesAtArbitraryDeeperIndentation(t *testing.T) {
 	// F08: nested blocks are valid at any indentation deeper than their
 	// parent, validated against the reference parser semantics.

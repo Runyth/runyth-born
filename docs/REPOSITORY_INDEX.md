@@ -38,7 +38,7 @@ imports are relative.
 | `internal/staticapp/core.go` | Build-time template analysis and section metadata |
 | `internal/mdast/` | JSON/YAML loading, question discovery, IDs, merging, fingerprints |
 | `internal/markdown/` | Canonical mdast Markdown rendering with literal-text escaping |
-| `internal/yamlmini/` | Dependency-free JSON-compatible YAML subset with full block scalar semantics, reference-compatible plain-scalar folding, flow collections, and nested block indents |
+| `internal/yamlmini/` | Dependency-free JSON-compatible YAML subset with full block scalar semantics, reference-compatible plain-scalar folding, quoted mapping keys, flow collections, and nested block indents |
 | `scripts/check.sh` | Formatting, race tests, vet, JS tests/syntax, build and artifact smoke checks |
 | `scripts/build-static.sh` | Static build with tracked-source output protection |
 | `scripts/validate-static.py` | Artifact references, compiled slots, catalog parity, no server/Go/WASM assets |

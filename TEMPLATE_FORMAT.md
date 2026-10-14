@@ -7,7 +7,7 @@ The build validates templates and generates the static `dist/templates/catalog.j
 ## Supported YAML subset
 
 The build accepts a dependency-free, JSON-compatible YAML subset. Supported:
-mappings, sequences, plain and quoted scalars, inline JSON arrays/objects,
+mappings (including quoted keys), sequences, plain and quoted scalars, inline JSON arrays/objects,
 `|` and `>` block scalars with optional chomping indicators (`-`, `+`) and
 explicit indentation indicators (for example `|2-`). Rejected: YAML anchors,
 aliases, tags, merge keys, and tab indentation. Syntax outside the subset fails

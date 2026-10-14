@@ -73,16 +73,11 @@ func (p *parser) parseBlock(indent int, parentIndent int) (any, error) {
 	}
 
 	content := strings.TrimSpace(p.lines[p.index])
-	if inlineJSON(content) || content[0] == '"' || content[0] == '\'' {
-		// A quoted scalar or an inline JSON collection is a complete typed
-		// node; it never continues on deeper lines and it can contain colons
-		// that are not mapping syntax (F08).
-		scalar, err := parseScalar(content)
-		if err != nil {
-			return nil, p.errorAt(p.index, err.Error())
-		}
-		p.index++
-		return scalar, nil
+	if content == "" {
+		// TrimSpace removes Unicode whitespace that the blank-line scan did
+		// not count as indentation. Indexing that empty string panics; the
+		// line is a validation error, including a leftover tab (F08).
+		return nil, p.rejectBlankStructuralLine()
 	}
 	if isSequenceLine(content) {
 		return p.parseSequence(indent)
@@ -93,8 +88,29 @@ func (p *parser) parseBlock(indent int, parentIndent int) (any, error) {
 		p.index++
 		return p.parseBlockScalarHeaderAndValue(parentIndent, content)
 	}
+	if inlineJSON(content) {
+		// A flow collection is a complete typed node. A colon inside it is
+		// not mapping syntax, so it is classified before key splitting (F08).
+		scalar, err := parseScalar(content)
+		if err != nil {
+			return nil, p.errorAt(p.index, err.Error())
+		}
+		p.index++
+		return scalar, nil
+	}
 	if _, _, ok := splitMappingEntry(content); ok {
+		// A quoted key is mapping syntax, not a standalone quoted scalar (F08).
 		return p.parseMapping(indent, nil)
+	}
+	if content[0] == '"' || content[0] == '\'' {
+		// A quoted scalar is a complete typed node; it never continues on
+		// deeper lines and it can contain colons that are not mapping syntax.
+		scalar, err := parseScalar(content)
+		if err != nil {
+			return nil, p.errorAt(p.index, err.Error())
+		}
+		p.index++
+		return scalar, nil
 	}
 	// The node is a bare plain scalar; deeper lines continue it (F08).
 	p.index++
@@ -326,6 +342,9 @@ func (p *parser) assignMappingValue(target map[string]any, key string, rawValue 
 			if isSequenceLine(plain) {
 				return p.errorAt(max(0, p.index-1), "sequence entries are not allowed here")
 			}
+			if plain == "" {
+				return p.errorAt(max(0, p.index-1), "unsupported whitespace")
+			}
 			if plain[0] == '?' && (len(plain) == 1 || plain[1] == ' ' || plain[1] == '\t') {
 				return p.errorAt(max(0, p.index-1), "mapping keys are not allowed here")
 			}
@@ -361,6 +380,9 @@ func (p *parser) assignMappingValue(target map[string]any, key string, rawValue 
 		return nil
 	}
 	content := strings.TrimSpace(p.lines[p.index])
+	if content == "" {
+		return p.rejectBlankStructuralLine()
+	}
 	if isSequenceLine(content) && nextIndent >= parentIndent {
 		// A block sequence value may start at any indentation at or past the
 		// mapping's own level (F08). A shallower sequence terminates the
@@ -391,9 +413,9 @@ func (p *parser) assignMappingValue(target map[string]any, key string, rawValue 
 		target[key] = nil
 		return nil
 	}
-	if inlineJSON(content) || content[0] == '"' || content[0] == '\'' {
-		// A typed scalar value never continues onto deeper lines; a colon
-		// inside `{...}` or `[...]` is not mapping syntax (F08).
+	if inlineJSON(content) {
+		// A flow collection is a complete typed value. A colon inside it is
+		// not mapping syntax, so it is classified before key splitting (F08).
 		scalar, err := parseScalar(content)
 		if err != nil {
 			return p.errorAt(p.index, err.Error())
@@ -404,12 +426,23 @@ func (p *parser) assignMappingValue(target map[string]any, key string, rawValue 
 	}
 	if _, _, ok := splitMappingEntry(content); ok {
 		// A nested mapping may use any indentation deeper than the parent's,
-		// and parseMapping consumes its first entry line itself (F08).
+		// including a quoted first key. parseMapping consumes its first entry
+		// line itself (F08).
 		nested, err := p.parseMapping(nextIndent, nil)
 		if err != nil {
 			return err
 		}
 		target[key] = nested
+		return nil
+	}
+	if content[0] == '"' || content[0] == '\'' {
+		// A quoted scalar value never continues onto deeper lines (F08).
+		scalar, err := parseScalar(content)
+		if err != nil {
+			return p.errorAt(p.index, err.Error())
+		}
+		target[key] = scalar
+		p.index++
 		return nil
 	}
 	// The remaining deeper content is a multiline plain scalar value whose
@@ -1550,6 +1583,16 @@ func forbiddenTab(line string) bool {
 
 func (p *parser) errorAt(index int, message string) error {
 	return fmt.Errorf("YAML line %d: %s", index+1, message)
+}
+
+// rejectBlankStructuralLine reports a line that survived the blank-line scan
+// only because TrimSpace then reduced it to nothing. A tab in that leftover
+// keeps the same rejection as every other structural tab (F08).
+func (p *parser) rejectBlankStructuralLine() error {
+	if forbiddenTab(p.lines[p.index]) {
+		return p.errorAt(p.index, "tabs are not supported outside quoted scalars")
+	}
+	return p.errorAt(p.index, "unsupported whitespace")
 }
 
 func firstRune(value string) rune {
