@@ -115,3 +115,44 @@ children:
 		t.Fatalf("explicit indentation content not preserved: %q", compiled.Parts[0].Text)
 	}
 }
+
+// A complete valid mdast template may author sequence children and nested
+// blocks at any indentation deeper than their parent, not only the plus-two
+// steps (F08).
+func TestCompileTemplateWithArbitraryChildrenIndentation(t *testing.T) {
+	source := []byte(`type: root
+children:
+    - type: heading
+      depth: 1
+      children:
+           - type: text
+             value: Arbitrary Indent Template
+    - type: paragraph
+      children:
+           - type: text
+             value: Brief answers are sufficient.
+    - type: list
+      spread: false
+      children:
+             - type: listItem
+               spread: false
+               checked: null
+               children:
+                    - type: paragraph
+                      children:
+                           - type: strong
+                             children:
+                                  - type: text
+                                    value: "Name:"
+`)
+	compiled, err := Compile(source, ".yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(compiled.Questions) == 0 {
+		t.Fatal("no questions")
+	}
+	if !strings.Contains(compiled.Parts[0].Text, "Name:") {
+		t.Fatalf("arbitrary indentation content not preserved: %q", compiled.Parts[0].Text)
+	}
+}

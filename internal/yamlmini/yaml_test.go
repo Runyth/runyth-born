@@ -317,3 +317,193 @@ func TestBlockScalarInSequenceItemIsRejected(t *testing.T) {
 		t.Fatal("accepted an indented block scalar inside a sequence item")
 	}
 }
+
+// wantDocument is one reference-comparison case: the document text, the
+// wanted value, or a rejection.
+type wantDocument struct {
+	source string
+	value  any
+}
+
+// assertWantDocument compares Parse output against the reference value after
+// a JSON round trip so numeric encodings stay out of the comparison; a
+// reference value of nil requires a rejection.
+func assertWantDocument(t *testing.T, doc wantDocument) {
+	t.Helper()
+	parsed, err := Parse([]byte(doc.source))
+	if doc.value == nil {
+		if err == nil {
+			t.Fatalf("accepted %q", doc.source)
+		}
+		return
+	}
+	if err != nil {
+		t.Fatalf("Parse(%q) error = %v", doc.source, err)
+	}
+	parsedBytes, err := json.Marshal(parsed)
+	if err != nil {
+		t.Fatalf("Marshal(%q) error = %v", doc.source, err)
+	}
+	wantBytes, err := json.Marshal(doc.value)
+	if err != nil {
+		t.Fatalf("Marshal reference for %q error = %v", doc.source, err)
+	}
+	if string(parsedBytes) != string(wantBytes) {
+		t.Fatalf("Parse(%q) = %s, want %s", doc.source, parsedBytes, wantBytes)
+	}
+}
+
+func TestEmptyValueBlockDispatchMatchesReference(t *testing.T) {
+	// F08: a comment-only or absent value dispatches to the nested block at
+	// any deeper indentation, and a bare plain scalar folds across lines.
+	for _, doc := range []wantDocument{
+		{"value:\n  x\n\n", map[string]any{"value": "x"}},
+		{"value:\n  x\n", map[string]any{"value": "x"}},
+		{"value:\n  x\n y\n", map[string]any{"value": "x y"}},
+		{"value:\n     ke y: # h\n", map[string]any{"value": map[string]any{"ke y": nil}}},
+		{"value:\n   k: beta\n     a,b\n", map[string]any{"value": map[string]any{"k": "beta a,b"}}},
+		{"value:\n  z: # h\n\n   {\"a\": \"b: c # d\"}\n", map[string]any{"value": map[string]any{"z": map[string]any{"a": "b: c # d"}}}},
+		{"value:\n    # h\n    - x\n      y\n", map[string]any{"value": []any{"x y"}}},
+		{"value:\n  true\n", map[string]any{"value": true}},
+		{"value:\n  null\n", map[string]any{"value": nil}},
+		{"value:\n     12\n", map[string]any{"value": 12}},
+		{"value:\n  \"d\"\n", map[string]any{"value": "d"}},
+		{"value:\n  {\"a\": 1}\n", map[string]any{"value": map[string]any{"a": 1}}},
+		{"value:\n  - item\n", map[string]any{"value": []any{"item"}}},
+		{"value:\n- item\n", map[string]any{"value": []any{"item"}}},
+		{"k:\n  |-\n    text\n", map[string]any{"k": "text"}},
+		{"k:\n      |-\n        text\n", map[string]any{"k": "text"}},
+		{"k:\n  |-2\n       x\n", map[string]any{"k": "     x"}},
+		{"k:\n  |2\n     x\n", map[string]any{"k": "   x\n"}},
+		{"value:\n  x\n- y\n", nil},
+		{"a:\n  b:\n- x\n", nil},
+		{"value:\n      a: 1\n        b: 2\n", nil},
+	} {
+		assertWantDocument(t, doc)
+	}
+}
+
+func TestMultilinePlainScalarsFoldLikeReference(t *testing.T) {
+	// F08: blank runs fold to line breaks, deeper lines continue with a
+	// single space, and trailing comments end the fold.
+	for _, doc := range []wantDocument{
+		{"k: 12\n  2\n", map[string]any{"k": "12 2"}},
+		{"k: 12\n\n  b\n", map[string]any{"k": "12\nb"}},
+		{"value:\n\n    true\n", map[string]any{"value": true}},
+		{"value:\n        \n   null\n    # h\n", map[string]any{"value": nil}},
+		{"value:\n  \n    null\n   \n  null\n", map[string]any{"value": "null\nnull"}},
+		{"value:\n  true\n\n    a,b\n", map[string]any{"value": "true\na,b"}},
+		{"value:\n    12\n    ['q', 12] # c\n", map[string]any{"value": "12 ['q', 12]"}},
+		{"x\ny\n", "x y"},
+		{"x\n y\n", "x y"},
+		{"-\n  x\n  y\n", []any{"x y"}},
+		{"-\n  x\n y\n", []any{"x y"}},
+		{"-\n  x\n- y\n", []any{"x", "y"}},
+	} {
+		assertWantDocument(t, doc)
+	}
+	for _, source := range []string{
+		"value:\n  x # c\n    y\n",
+		"k: 12 # c\n  y\n",
+		"k: 1 # c\n  beta\n",
+	} {
+		if _, err := Parse([]byte(source)); err == nil {
+			t.Fatalf("accepted comment-truncated fold %q", source)
+		}
+	}
+}
+
+func TestPlainScalarValuesUnfoldableSeparatorsAreRejected(t *testing.T) {
+	// F08: a plain scalar value with its own separate value indicator is a
+	// scanner error in the reference parser.
+	for _, doc := range []wantDocument{
+		{"k: a: b\n", nil},
+		{"value:\n  ke y: a: b\n", nil},
+		{"value:\n    z: y: 2\n", nil},
+		{"value:\n   k: beta\n  a : b\n", nil},
+		{"- a: b: c\n", nil},
+		{"- : x\n", nil},
+	} {
+		assertWantDocument(t, doc)
+	}
+	for _, doc := range []wantDocument{
+		{"k: 'a: b'\n", map[string]any{"k": "a: b"}},
+		{"k: \"a: b\"\n", map[string]any{"k": "a: b"}},
+		{"- a: b\n", []any{map[string]any{"a": "b"}}},
+		{"k: a:b\n", map[string]any{"k": "a:b"}},
+		{"- ::x\n", []any{"::x"}},
+	} {
+		assertWantDocument(t, doc)
+	}
+}
+
+func TestFlowCollectionsMatchReferenceGrammar(t *testing.T) {
+	// F08: the reference flow grammar covers bare keys, shorthand entries,
+	// trailing commas, single-quote escaping, unsigned values, and rejects
+	// indicators that cannot start a node.
+	for _, doc := range []wantDocument{
+		{"{a: 1}\n", map[string]any{"a": 1}},
+		{"{x}\n", map[string]any{"x": nil}},
+		{"[x]\n", []any{"x"}},
+		{"{a: 1, b: [x, 2]}\n", map[string]any{"a": 1, "b": []any{"x", 2}}},
+		{"{\"a\": 1, }\n", map[string]any{"a": 1}},
+		{"[1, ]\n", []any{1}},
+		{"[a: b]\n", []any{map[string]any{"a": "b"}}},
+		{"[a: b, c: d]\n", []any{map[string]any{"a": "b"}, map[string]any{"c": "d"}}},
+		{"[a, 'b: c']\n", []any{"a", "b: c"}},
+		{"{a: 'b''c'}\n", map[string]any{"a": "b'c"}},
+		{"{a: \"}\"}\n", map[string]any{"a": "}"}},
+		{"{a: \"\\u00e9\"}\n", map[string]any{"a": "é"}},
+		{"[a\"b]\n", []any{"a\"b"}},
+		{"{a\"b: c}\n", map[string]any{"a\"b": "c"}},
+		{"[a,]\n", []any{"a"}},
+		{"[a: , b]\n", []any{map[string]any{"a": nil}, "b"}},
+		{"[a:]\n", []any{map[string]any{"a": nil}}},
+		{"[a, b]\n", []any{"a", "b"}},
+		{"{a: yes}\n", map[string]any{"a": true}},
+		{"[a\" b] # c\n", []any{"a\" b"}},
+	} {
+		assertWantDocument(t, doc)
+	}
+	for _, source := range []string{
+		"{,}\n",
+		"[:, v]\n",
+		"[: v]\n",
+		"{a: b: c}\n",
+		"{'a'\n",
+		"{#c}\n",
+		"[# c]\n",
+		"[|x]\n",
+		"[>x]\n",
+		"{a: @x}\n",
+		"[a: b]\n\n c\n",
+	} {
+		if _, err := Parse([]byte(source)); err == nil {
+			t.Fatalf("accepted invalid flow collection %q", source)
+		}
+	}
+}
+
+func TestRepeatedMappingKeysKeepTheLastValue(t *testing.T) {
+	// F08: the reference constructor silently overwrites repeated keys.
+	for _, doc := range []wantDocument{
+		{"a: b\na: b\n", map[string]any{"a": "b"}},
+		{"k:\n  a: 1\n  a: 2\n", map[string]any{"k": map[string]any{"a": 2}}},
+		{"a: 1\nb: 2\na: true\n", map[string]any{"a": true, "b": 2}},
+		{"{a: 1, a: true}\n", map[string]any{"a": true}},
+	} {
+		assertWantDocument(t, doc)
+	}
+}
+
+func TestBlockScalarValuesAtArbitraryDeeperIndentation(t *testing.T) {
+	// F08: nested blocks are valid at any indentation deeper than their
+	// parent, validated against the reference parser semantics.
+	for _, doc := range []wantDocument{
+		{"value:\n    a: 1\n    b: 2\n", map[string]any{"value": map[string]any{"a": 1, "b": 2}}},
+		{"value:\n   k: [1, 2]\n", map[string]any{"value": map[string]any{"k": []any{1, 2}}}},
+		{"value:\n  {a:, b: 2}\n", map[string]any{"value": map[string]any{"a": nil, "b": 2}}},
+	} {
+		assertWantDocument(t, doc)
+	}
+}
