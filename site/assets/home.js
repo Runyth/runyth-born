@@ -12,6 +12,15 @@ const elements = {
   version: document.getElementById("app-version"),
 };
 
+function formatShownDate(value) {
+  const parsed = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return "";
+  }
+  const pad = (part) => String(part).padStart(2, "0");
+  return `${parsed.getFullYear()}/${pad(parsed.getMonth() + 1)}/${pad(parsed.getDate())} ${pad(parsed.getHours())}:${pad(parsed.getMinutes())}`;
+}
+
 function wizardURL(sessionID) {
   const url = new URL("./wizard.html", document.baseURI);
   url.searchParams.set("session", sessionID);
@@ -105,8 +114,7 @@ async function renderRecent() {
     link.append(title);
 
     const timestamp = document.createElement("small");
-    const parsed = new Date(session.updated_at || session.created_at || Date.now());
-    timestamp.textContent = Number.isNaN(parsed.getTime()) ? "Resume" : parsed.toLocaleString();
+    timestamp.textContent = formatShownDate(session.updated_at || session.created_at || Date.now()) || "Resume";
     link.append(timestamp);
     elements.recentList.append(link);
   }

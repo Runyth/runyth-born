@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Show resume dates as YYYY/MM/DD, with the local time after the date, instead of the browser's locale order.
+
 ## 3.0.2 - 2026-10-15
 
 - Count a blank question as answered on purpose, shown apart from written answers, so progress can advance while that question stays empty for later.
