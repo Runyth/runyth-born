@@ -20,8 +20,8 @@ check:
 browser-check: build
 	npm run test:browser
 
-serve: build
-	python3 -m http.server "$(PORT)" --bind 127.0.0.1 --directory "$(DIST_DIR)"
+serve:
+	PORT="$(PORT)" DIST_DIR="$(DIST_DIR)" python3 scripts/preview-static.py
 
 package: check
 	./scripts/package-release.sh
