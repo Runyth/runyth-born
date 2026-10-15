@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 3.0.2 - 2026-10-15
+
 - Count a blank question as answered on purpose, shown apart from written answers, so progress can advance while that question stays empty for later.
 
 ## 3.0.1 - 2026-10-15
