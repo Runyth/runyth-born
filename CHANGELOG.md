@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 3.0.3 - 2026-10-15
+
 - Show resume dates as YYYY/MM/DD, with the local time after the date, instead of the browser's locale order.
 
 ## 3.0.2 - 2026-10-15
