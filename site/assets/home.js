@@ -132,7 +132,7 @@ async function loadCatalog() {
       throw new Error("catalog format is invalid");
     }
 
-    elements.version.textContent = catalog.app_version || "3.0.2";
+    elements.version.textContent = catalog.app_version || "3.0.3";
     elements.grid.replaceChildren();
     for (const template of catalog.templates) {
       elements.grid.append(templateCard(template));
