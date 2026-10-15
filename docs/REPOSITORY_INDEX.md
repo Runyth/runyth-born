@@ -41,6 +41,7 @@ imports are relative.
 | `internal/yamlmini/` | Dependency-free JSON-compatible YAML subset with full block scalar semantics, reference-compatible plain-scalar folding, quoted mapping keys, flow collections, and nested block indents |
 | `scripts/check.sh` | Formatting, race tests, vet, JS tests/syntax, build and artifact smoke checks |
 | `scripts/build-static.sh` | Static build with tracked-source output protection |
+| `scripts/preview-static.py` | Local `127.0.0.1` preview of `dist/` that rebuilds when site or template sources change |
 | `scripts/validate-static.py` | Artifact references, compiled slots, catalog parity, no server/Go/WASM assets |
 | `scripts/package-release.sh` | Provenance checks, history scan, three release ZIPs, byte/mode verification, archive verification with extracted-source checks, checksums, physical isolation of nested Git-directory symlinks and copied worktree redirects |
 | `scripts/check-release-tag.sh` | Release tag/VERSION agreement guard |

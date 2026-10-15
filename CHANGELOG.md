@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Preview the site locally with `make serve`, which builds `dist/`, serves it only on `127.0.0.1`, and rebuilds when the site or templates change.
 - Publish the player character backstory questionnaire as Character Backstory, and remove the sample questionnaire from the site catalog.
 
 ## 3.0.0 - 2026-10-14

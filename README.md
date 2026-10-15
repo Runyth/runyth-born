@@ -64,13 +64,13 @@ Build the deployable site:
 make build
 ```
 
-Preview it locally:
+Preview it locally, before committing or deploying:
 
 ```bash
 make serve
 ```
 
-Then open `http://127.0.0.1:8080/`. A local HTTP server is required for development because browsers intentionally restrict ES modules and `fetch` on `file://` URLs. It is not part of the deployed architecture.
+Then open `http://127.0.0.1:8080/`. The command builds `dist/`, serves only that directory on `127.0.0.1`, and rebuilds when `site/` or `templates/` changes. Refresh the browser to see the edit. Stop the server with Ctrl+C. A local HTTP server is required because browsers restrict ES modules and `fetch` on `file://` URLs. It is not part of the deployed architecture. Use `PORT=8765 make serve` for another port.
 
 Browser acceptance tests use a development-only Playwright dependency:
 
