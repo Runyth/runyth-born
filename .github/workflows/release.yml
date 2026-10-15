@@ -47,7 +47,7 @@ jobs:
         run: npx playwright install --with-deps chromium
 
       - name: Check static browser workflows
-        run: npm run test:browser
+        run: make browser-check
 
       - name: Upload workflow artifacts
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
