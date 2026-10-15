@@ -28,6 +28,7 @@ const elements = {
   context: document.getElementById("question-context"),
   label: document.getElementById("question-label"),
   answer: document.getElementById("answer"),
+  markAnswered: document.getElementById("mark-answered"),
   previous: document.getElementById("previous-question"),
   next: document.getElementById("next-question"),
   saveStatus: document.getElementById("save-status"),
@@ -135,10 +136,46 @@ function sectionTitle(section) {
   return withoutDuplicateNumber || section.title;
 }
 
-function sectionAnswered(section) {
-  return session.questions
-    .slice(section.start, section.end + 1)
-    .filter((item) => String(item.answer || "").trim() !== "").length;
+function isFilled(item) {
+  return String(item?.answer || "").trim() !== "";
+}
+
+function isMarkedBlank(item) {
+  return item?.marked_answered === true && !isFilled(item);
+}
+
+function markPressed() {
+  return elements.markAnswered.getAttribute("aria-pressed") === "true";
+}
+
+function syncMarkButton(pressed, locked = false) {
+  const on = pressed && !locked;
+  elements.markAnswered.disabled = locked;
+  elements.markAnswered.setAttribute("aria-pressed", on ? "true" : "false");
+  elements.markAnswered.className = on ? "button button-marked" : "button button-secondary";
+  if (locked) {
+    elements.markAnswered.title = "Clear the answer before marking this question blank";
+  } else {
+    elements.markAnswered.removeAttribute("title");
+  }
+  elements.markAnswered.replaceChildren();
+  if (on) {
+    const check = document.createElement("span");
+    check.className = "mark-check";
+    check.setAttribute("aria-hidden", "true");
+    check.textContent = "✓";
+    elements.markAnswered.append(check);
+  }
+  elements.markAnswered.append("Mark answered");
+}
+
+function sectionProgress(section) {
+  const items = session.questions.slice(section.start, section.end + 1);
+  return {
+    filled: items.filter(isFilled).length,
+    marked: items.filter(isMarkedBlank).length,
+    total: items.length,
+  };
 }
 
 function sectionTotal(section) {
@@ -166,9 +203,24 @@ function renderSections() {
     title.textContent = `${section.index}. ${sectionTitle(section)}`;
     button.append(title);
 
+    const progress = sectionProgress(section);
     const count = document.createElement("span");
-    count.textContent = `${sectionAnswered(section)}/${sectionTotal(section)}`;
+    count.className = "section-count";
+    const filled = document.createElement("span");
+    filled.className = "count-filled";
+    filled.textContent = String(progress.filled);
+    count.append(filled);
+    if (progress.marked > 0) {
+      const marked = document.createElement("span");
+      marked.className = "count-marked";
+      marked.textContent = `+${progress.marked}`;
+      count.append(marked);
+    }
+    count.append(`/${progress.total}`);
     button.append(count);
+    if (progress.marked > 0) {
+      button.classList.add("has-marked");
+    }
 
     const activate = () => {
       void navigateTo(section.start);
@@ -180,10 +232,31 @@ function renderSections() {
 }
 
 function renderProgress() {
-  const answered = session.questions.filter((item) => String(item.answer || "").trim() !== "").length;
+  const filled = session.questions.filter(isFilled).length;
+  const marked = session.questions.filter(isMarkedBlank).length;
   const total = session.questions.length;
-  elements.overallCount.textContent = `${answered} of ${total} answered`;
-  elements.overallProgress.value = total === 0 ? 0 : Math.round((answered / total) * 100);
+  const done = filled + marked;
+  elements.overallCount.replaceChildren();
+  const written = document.createElement("span");
+  written.className = "count-filled";
+  written.textContent = String(filled);
+  elements.overallCount.append(written, " written");
+  if (marked > 0) {
+    const blank = document.createElement("span");
+    blank.className = "count-marked";
+    blank.textContent = `${marked} marked blank`;
+    elements.overallCount.append(" · ", blank);
+  }
+  elements.overallCount.append(` · ${done} of ${total}`);
+  const filledWidth = total === 0 ? 0 : (filled / total) * 100;
+  const markedWidth = total === 0 ? 0 : (marked / total) * 100;
+  elements.overallProgress.querySelector(".progress-filled").style.width = `${filledWidth}%`;
+  elements.overallProgress.querySelector(".progress-marked").style.width = `${markedWidth}%`;
+  const summary = marked > 0
+    ? `${filled} written, ${marked} marked blank, ${done} of ${total}`
+    : `${filled} of ${total} answered`;
+  elements.overallProgress.setAttribute("aria-valuenow", String(total === 0 ? 0 : Math.round(((filled + marked) / total) * 100)));
+  elements.overallProgress.setAttribute("aria-valuetext", summary);
 }
 
 function renderQuestion({ focus = false } = {}) {
@@ -205,6 +278,8 @@ function renderQuestion({ focus = false } = {}) {
   renderContext(item.context);
   elements.label.textContent = item.label;
   elements.answer.value = item.answer || "";
+  syncMarkButton(isMarkedBlank(item), isFilled(item));
+  elements.card.classList.toggle("marked-blank", isMarkedBlank(item));
   const onLastQuestion = currentIndex === session.questions.length - 1;
   elements.previous.disabled = false;
   elements.next.disabled = false;
@@ -226,7 +301,11 @@ function updateLocalAnswer() {
   if (!session || !question()) {
     return;
   }
+  const filled = isFilled({ answer: elements.answer.value });
+  syncMarkButton(filled ? false : markPressed(), filled);
   session.questions[currentIndex].answer = elements.answer.value;
+  session.questions[currentIndex].marked_answered = markPressed();
+  elements.card.classList.toggle("marked-blank", isMarkedBlank(session.questions[currentIndex]));
   if (session.completed && dirty) {
     session.completed = false;
     elements.finish.textContent = "Finish and download";
@@ -259,6 +338,10 @@ function flushSave() {
   const index = currentIndex;
   const revision = editRevision;
   session.questions[index].answer = normalizeAnswer(elements.answer.value);
+  if (isFilled(session.questions[index])) {
+    syncMarkButton(false, true);
+  }
+  session.questions[index].marked_answered = markPressed();
   const snapshot = structuredClone(session);
   setSaveStatus("Saving locally…", "saving");
   savePromise = savePromise
@@ -667,7 +750,7 @@ async function importPreservedEntries() {
 }
 
 function firstUnanswered(questions) {
-  const index = questions.findIndex((item) => String(item.answer || "").trim() === "");
+  const index = questions.findIndex((item) => !isFilled(item) && !isMarkedBlank(item));
   return index < 0 ? 0 : index;
 }
 
@@ -776,6 +859,14 @@ async function initialise() {
 }
 
 elements.answer.addEventListener("input", scheduleSave);
+elements.markAnswered.addEventListener("click", () => {
+  if (elements.markAnswered.disabled || isFilled({ answer: elements.answer.value })) {
+    syncMarkButton(false, true);
+    return;
+  }
+  syncMarkButton(!markPressed());
+  scheduleSave();
+});
 elements.answer.addEventListener("blur", () => {
   void flushSave().catch(() => undefined);
 });
@@ -820,6 +911,12 @@ document.addEventListener("keydown", (event) => {
   } else if (event.key === "ArrowRight") {
     event.preventDefault();
     void navigateTo(currentIndex + 1);
+  } else if (event.key === "Home") {
+    event.preventDefault();
+    if (event.repeat || !ready || elements.markAnswered.disabled) {
+      return;
+    }
+    elements.markAnswered.click();
   }
 });
 

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Count a blank question as answered on purpose, shown apart from written answers, so progress can advance while that question stays empty for later.
+
 ## 3.0.1 - 2026-10-15
 
 - Present the catalog page for people filling questionnaires: a questionnaire logo used as the mark and favicon, a plain-language welcome line, and a footer with version, licence, and source.

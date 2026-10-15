@@ -47,6 +47,19 @@ test("portable resume payload round-trips only the state needed to reconcile ans
   }]);
 });
 
+test("a blank marked answered survives a portable resume", async () => {
+  const session = exampleSession();
+  session.questions[0].answer = "";
+  session.questions[0].marked_answered = true;
+  const restored = await decodeResumePayload(await encodeResumePayload(session));
+  assert.deepEqual(restored.questions, [{
+    id: "core\u001fname#1",
+    fallback_id: "name#1",
+    answer: "",
+    marked_answered: true,
+  }]);
+});
+
 test("portable resume URL keeps state in the fragment", async () => {
   const value = await buildResumeURL(exampleSession(), "https://example.invalid/runyth-born/wizard.html?session=old");
   const url = new URL(value);

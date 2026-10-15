@@ -71,13 +71,16 @@ export async function callCore(operation, { source, saved_questions = [] } = {})
       const saved = exact.get(question.id);
       if (saved && !consumed.has(saved)) {
         question.answer = String(saved.answer ?? "");
+        question.marked_answered = saved.marked_answered === true;
         consumed.add(saved);
         reconciliation.exact += 1;
         continue;
       }
       if (currentLabels.get(label) === 1 && savedLabels.get(label)?.length === 1 && !consumed.has(savedLabels.get(label)[0])) {
-        question.answer = String(savedLabels.get(label)[0].answer ?? "");
-        consumed.add(savedLabels.get(label)[0]);
+        const fallback = savedLabels.get(label)[0];
+        question.answer = String(fallback.answer ?? "");
+        question.marked_answered = fallback.marked_answered === true;
+        consumed.add(fallback);
         reconciliation.fallback += 1;
       }
     }

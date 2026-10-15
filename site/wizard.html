@@ -36,8 +36,11 @@
       <nav id="section-list"></nav>
       <div class="toc-footer">
         <div class="overall-progress" aria-label="Overall progress">
-          <span id="overall-count">0 of 0 answered</span>
-          <progress id="overall-progress" max="100" value="0">0%</progress>
+          <p id="overall-count">0 of 0 answered</p>
+          <div class="progress-track" id="overall-progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-valuetext="0 of 0 answered">
+            <span class="progress-filled"></span>
+            <span class="progress-marked"></span>
+          </div>
         </div>
       </div>
     </aside>
@@ -75,6 +78,7 @@
 
         <div class="question-navigation">
           <button class="button button-secondary" id="previous-question" type="button">← Previous</button>
+          <button class="button button-secondary" id="mark-answered" type="button" aria-pressed="false">Mark answered</button>
           <button class="button button-primary" id="next-question" type="button">Next →</button>
         </div>
       </article>
@@ -165,6 +169,7 @@
       <div class="dialog-body">
         <dl class="shortcut-list">
           <div><dt>Previous / Next</dt><dd>Use the buttons, the section list, or <kbd>Alt</kbd> + <kbd>←</kbd>/<kbd>→</kbd>.</dd></div>
+          <div><dt>Mark answered</dt><dd>Count a blank question as done for now, and come back to it later, or press <kbd>Alt</kbd> + <kbd>Home</kbd>.</dd></div>
           <div><dt>Autosave</dt><dd>Typing pauses briefly, then the questionnaire is saved locally in this browser.</dd></div>
           <div><dt>Resume here</dt><dd>The normal wizard URL resumes from this browser's local storage.</dd></div>
           <div><dt>Resume elsewhere</dt><dd>Use “Copy resume link” to create a self-contained snapshot URL for another browser or device.</dd></div>
