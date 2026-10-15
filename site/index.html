@@ -7,6 +7,7 @@
   <meta name="referrer" content="no-referrer">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'self'; connect-src 'self'; font-src 'self'; form-action 'self'; img-src 'self' data:; object-src 'none'; script-src 'self'; style-src 'self'">
   <title>Runyth Born</title>
+  <link rel="icon" href="./assets/logo.svg" type="image/svg+xml">
   <link rel="stylesheet" href="./assets/app.css">
   <script type="module" src="./assets/home.js"></script>
 </head>
@@ -14,10 +15,10 @@
   <header class="site-header">
     <div class="shell header-inner">
       <a class="brand" href="./index.html" aria-label="Runyth Born home">
-        <span class="brand-mark" aria-hidden="true">RB</span>
+        <span class="brand-mark" aria-hidden="true"><img src="./assets/logo.svg" alt=""></span>
         <span>
           <strong>Runyth Born</strong>
-          <small>Static browser edition</small>
+          <small>Questionnaires made Easy</small>
         </span>
       </a>
       <a class="text-link" href="./ai-template-prompt.txt">AI template prompt</a>
@@ -26,7 +27,7 @@
 
   <main class="shell home-main">
     <section class="hero">
-      <p class="eyebrow">Static · private · no server required</p>
+      <p class="eyebrow">Write your answers · keep them yours · share when ready</p>
       <h1>Choose a template and answer it cleanly.</h1>
       <p>Your questionnaire is saved locally in your browser. When finished, download one correctly formatted Markdown file and send it to your Dungeon Master.</p>
     </section>
@@ -66,7 +67,29 @@
   </main>
 
   <footer class="site-footer">
-    <div class="shell">Runyth Born <span id="app-version">3.0.0</span> · <a class="text-link" href="./license.txt">Licence</a> · Source: github.com/Runyth/runyth-born</div>
+    <div class="shell footer-inner">
+      <div class="footer-brand">
+        <span class="brand-mark brand-mark-small" aria-hidden="true"><img src="./assets/logo.svg" alt=""></span>
+        <span>
+          <strong>Runyth Born</strong>
+          <small>Questionnaires made Easy</small>
+        </span>
+      </div>
+      <ul class="footer-meta">
+        <li>
+          <span class="footer-label">Version</span>
+          <span class="version-pill">v<span id="app-version">3.0.0</span></span>
+        </li>
+        <li>
+          <span class="footer-label">Licence</span>
+          <a href="./license.txt">AGPL-3.0</a>
+        </li>
+        <li>
+          <span class="footer-label">Source</span>
+          <a href="https://github.com/Runyth/runyth-born" rel="noreferrer">Runyth/runyth-born</a>
+        </li>
+      </ul>
+    </div>
   </footer>
 
   <noscript>

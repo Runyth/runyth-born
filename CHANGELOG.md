@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Present the catalog page for people filling questionnaires: a questionnaire logo used as the mark and favicon, a plain-language welcome line, and a footer with version, licence, and source.
 - Preview the site locally with `make serve`, which builds `dist/`, serves it only on `127.0.0.1`, and rebuilds when the site or templates change.
 - Publish the player character backstory questionnaire as Character Backstory, and remove the sample questionnaire from the site catalog.
 

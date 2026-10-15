@@ -11,10 +11,13 @@ from urllib.parse import urlparse, unquote
 import re
 
 
+SOURCE_CITATION = "https://github.com/Runyth/runyth-born"
+
+
 class ReferenceParser(HTMLParser):
   def __init__(self) -> None:
     super().__init__()
-    self.references: list[str] = []
+    self.references: list[tuple[str, str]] = []
     self.base = ""
 
   def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
@@ -22,9 +25,9 @@ class ReferenceParser(HTMLParser):
     if tag == "base":
       self.base = values.get("href") or ""
     if tag in {"a", "link"} and values.get("href"):
-      self.references.append(values["href"] or "")
+      self.references.append((tag, values["href"] or ""))
     if tag in {"script", "img"} and values.get("src"):
-      self.references.append(values["src"] or "")
+      self.references.append((tag, values["src"] or ""))
 
 
 def fail(message: str) -> None:
@@ -36,11 +39,13 @@ def validate_html(root: Path, path: Path) -> None:
   parser.feed(path.read_text(encoding="utf-8"))
   if parser.base and (path.name != "404.html" or not parser.base.startswith("/") or parser.base.startswith("//")):
     fail(f"unexpected document base: {parser.base}")
-  for reference in parser.references:
+  for tag, reference in parser.references:
     if not reference or reference.startswith(("#", "mailto:", "data:")):
       continue
     parsed = urlparse(reference)
     if parsed.scheme or parsed.netloc:
+      if tag == "a" and reference == SOURCE_CITATION:
+        continue
       fail(f"external runtime reference in {path.relative_to(root)}: {reference}")
     if parsed.path.startswith("/"):
       fail(f"root-relative reference breaks project Pages sites: {reference}")
