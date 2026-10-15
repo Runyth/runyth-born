@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- Add the player character backstory questionnaire, shown as Character Backstory Template.
+- Publish the player character backstory questionnaire as Character Backstory, and remove the sample questionnaire from the site catalog.
 
 ## 3.0.0 - 2026-10-14
 

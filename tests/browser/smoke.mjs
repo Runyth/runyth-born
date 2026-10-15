@@ -258,10 +258,10 @@ try {
     const now = new Date().toISOString();
     const session = {
       version: 2, id: "legacy-idb-session-0001", template_id: "legacy-template",
-      template_filename: "minimal-template.mdast.json", template_fingerprint: "legacy",
+      template_filename: "player-character-backstory.mdast.json", template_fingerprint: "legacy",
       template_name: "Character Backstory", player_name: "Alex", created_at: now, updated_at: now,
       current_question: 0, completed: false,
-      questions: [{ id: "legacy\u001fname#1", fallback_id: "name#1", answer: "Legacy saved answer",
+      questions: [{ id: "character backstory > 1. core\u001fname#1", fallback_id: "name#1", answer: "Legacy saved answer",
         label: "Name", breadcrumb: ["Character Backstory", "Core"], context: [], label_ordinal: 1 }],
     };
     await new Promise((resolve, reject) => {
@@ -351,10 +351,10 @@ try {
     const now = new Date().toISOString();
     const session = {
       version: 2, id: "legacy-delete-session-01", template_id: "legacy-template",
-      template_filename: "minimal-template.mdast.json", template_fingerprint: "legacy",
+      template_filename: "player-character-backstory.mdast.json", template_fingerprint: "legacy",
       template_name: "Character Backstory", player_name: "Alex", created_at: now, updated_at: now,
       current_question: 0, completed: false,
-      questions: [{ id: "legacy\u001fname#1", fallback_id: "name#1", answer: "Saved before project rename",
+      questions: [{ id: "character backstory > 1. core\u001fname#1", fallback_id: "name#1", answer: "Saved before project rename",
         label: "Name", breadcrumb: ["Character Backstory", "Core"], context: [], label_ordinal: 1 }],
     };
     await new Promise((resolve, reject) => {
@@ -471,7 +471,7 @@ try {
   await tiedSeed.goto(origin + fixtures[0][0]);
   await tiedSeed.evaluate(async () => {
     const now = new Date().toISOString();
-    const questions = (answer) => [{ id: "tied\u001fname#1", fallback_id: "name#1", answer, label: "Name",
+    const questions = (answer) => [{ id: "character backstory > 1. core\u001fname#1", fallback_id: "name#1", answer, label: "Name",
       breadcrumb: ["Character Backstory", "Core"], context: [], label_ordinal: 1 }];
     await new Promise((resolve, reject) => {
       const request = indexedDB.open("runyth-born", 4);
@@ -488,7 +488,7 @@ try {
         const transaction = database.transaction("sessions", "readwrite");
         transaction.objectStore("sessions").put({
           version: 2, id: "tied-copy-session-01", template_id: "legacy-template",
-          template_filename: "minimal-template.mdast.json", template_fingerprint: "seed",
+          template_filename: "player-character-backstory.mdast.json", template_fingerprint: "seed",
           template_name: "Character Backstory", player_name: "Alex", created_at: now, updated_at: now,
           current_question: 0, completed: false, revision: 10,
           questions: questions("IndexedDB tied copy"),
@@ -500,7 +500,7 @@ try {
     });
     localStorage.setItem("runyth-born.session.v2.tied-copy-session-01", JSON.stringify({
       version: 2, id: "tied-copy-session-01", template_id: "legacy-template",
-      template_filename: "minimal-template.mdast.json", template_fingerprint: "seed",
+      template_filename: "player-character-backstory.mdast.json", template_fingerprint: "seed",
       template_name: "Character Backstory", player_name: "Alex", created_at: now, updated_at: now,
       current_question: 0, completed: false, revision: 10,
       questions: questions("Fallback tied copy"),
@@ -562,7 +562,7 @@ try {
     });
     const session = {
       version: 2, id: "merged-recovery-session-01", template_id: "legacy-template",
-      template_filename: "minimal-template.mdast.json", template_fingerprint: "seed",
+      template_filename: "player-character-backstory.mdast.json", template_fingerprint: "seed",
       template_name: "Character Backstory", player_name: "Alex",
       created_at: "2025-12-31T00:00:00.000Z", updated_at: "2025-12-31T00:00:00.000Z",
       current_question: 0, completed: false, revision: 3,
@@ -613,7 +613,7 @@ try {
     });
     const session = {
       version: 2, id: "old-schema-recovery-01", template_id: "legacy-template",
-      template_filename: "minimal-template.mdast.json", template_fingerprint: "seed",
+      template_filename: "player-character-backstory.mdast.json", template_fingerprint: "seed",
       template_name: "Character Backstory", player_name: "Alex",
       created_at: "2025-12-31T00:00:00.000Z", updated_at: "2025-12-31T00:00:00.000Z",
       current_question: 0, completed: false, revision: 1,
@@ -651,7 +651,7 @@ try {
     const questions = (answer) => [{ id: "race\u001fname#1", fallback_id: "name#1", answer, label: "Name", breadcrumb: [], context: [], label_ordinal: 1 }];
     const session = {
       version: 2, id: "concurrent-recovery-01", template_id: "legacy-template",
-      template_filename: "minimal-template.mdast.json", template_fingerprint: "seed",
+      template_filename: "player-character-backstory.mdast.json", template_fingerprint: "seed",
       template_name: "Character Backstory", player_name: "Alex",
       created_at: "2025-12-31T00:00:00.000Z", updated_at: "2025-12-31T00:00:00.000Z",
       current_question: 0, completed: false, revision: 4,
@@ -709,7 +709,7 @@ try {
     const questions = (answer) => [{ id: "race\u001fname#1", fallback_id: "name#1", answer, label: "Name", breadcrumb: [], context: [], label_ordinal: 1 }];
     const session = {
       version: 2, id: "recovery-delete-race-01", template_id: "legacy-template",
-      template_filename: "minimal-template.mdast.json", template_fingerprint: "seed",
+      template_filename: "player-character-backstory.mdast.json", template_fingerprint: "seed",
       template_name: "Character Backstory", player_name: "Alex",
       created_at: "2025-12-31T00:00:00.000Z", updated_at: "2025-12-31T00:00:00.000Z",
       current_question: 0, completed: false, revision: 2,
@@ -771,7 +771,7 @@ try {
     const now = new Date().toISOString();
     const session = {
       version: 2, id: "quota-delete-01", template_id: "legacy-template",
-      template_filename: "minimal-template.mdast.json", template_fingerprint: "seed",
+      template_filename: "player-character-backstory.mdast.json", template_fingerprint: "seed",
       template_name: "Character Backstory", player_name: "Alex",
       created_at: now, updated_at: now, current_question: 0, completed: false, revision: 0,
       questions: [{ id: "quota\u001fname#1", fallback_id: "name#1", answer: "Private answer before deletion",
