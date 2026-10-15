@@ -77,11 +77,17 @@ function resumableSnapshot(session) {
     current_question: session.current_question || 0,
     completed: Boolean(session.completed),
     questions: Array.isArray(session.questions)
-      ? session.questions.map((question) => ({
-        id: String(question.id || ""),
-        fallback_id: String(question.fallback_id || ""),
-        answer: String(question.answer || ""),
-      }))
+      ? session.questions.map((question) => {
+        const saved = {
+          id: String(question.id || ""),
+          fallback_id: String(question.fallback_id || ""),
+          answer: String(question.answer || ""),
+        };
+        if (question.marked_answered === true) {
+          saved.marked_answered = true;
+        }
+        return saved;
+      })
       : [],
   };
 }
@@ -147,11 +153,15 @@ export async function decodeResumePayload(payload) {
     if (answer.length > 65536) {
       throw new Error("Resume payload contains an answer larger than the supported limit");
     }
-    return {
+    const saved = {
       id: String(question?.id || "").slice(0, 4096),
       fallback_id: String(question?.fallback_id || "").slice(0, 4096),
       answer,
     };
+    if (question?.marked_answered === true) {
+      saved.marked_answered = true;
+    }
+    return saved;
   });
   return decoded;
 }

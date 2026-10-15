@@ -60,3 +60,11 @@ test("unique-label fallback matches are counted separately from exact matches", 
   assert.equal(result.reconciliation.fallback, 1);
   assert.equal(result.reconciliation.unmatched, 0);
 });
+
+test("a blank marked answered stays blank and keeps its mark", async () => {
+  const result = await callCore("reconcile", { source: source([question]),
+    saved_questions: [{ ...question, answer: "", marked_answered: true }] });
+  assert.equal(result.questions[0].answer, "");
+  assert.equal(result.questions[0].marked_answered, true);
+  assert.equal(result.markdown, "- **Name:**\n");
+});

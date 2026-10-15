@@ -301,9 +301,10 @@ export function recordsDiverge(left, right) {
   if (!left || !right) { return false; }
   if (String(left.player_name || "") !== String(right.player_name || "")) { return true; }
   if (Boolean(left.completed) !== Boolean(right.completed)) { return true; }
-  const leftAnswers = new Map((left.questions || []).map((question) => [String(question.id || ""), String(question.answer ?? "")]));
+  const signature = (question) => `${String(question.answer ?? "")}\u0000${question.marked_answered === true ? "1" : "0"}`;
+  const leftAnswers = new Map((left.questions || []).map((question) => [String(question.id || ""), signature(question)]));
   for (const question of right.questions || []) {
-    if ((leftAnswers.get(String(question.id || "")) ?? "") !== String(question.answer ?? "")) { return true; }
+    if ((leftAnswers.get(String(question.id || "")) ?? "\u00000") !== signature(question)) { return true; }
   }
   const answeredCount = (questions) => (questions || []).filter((item) => String(item.answer || "").trim() !== "").length;
   return answeredCount(left.questions) !== answeredCount(right.questions);
