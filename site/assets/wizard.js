@@ -34,6 +34,13 @@ const elements = {
   saveStatus: document.getElementById("save-status"),
   overallCount: document.getElementById("overall-count"),
   overallProgress: document.getElementById("overall-progress"),
+  filters: {
+    new: document.getElementById("filter-new"),
+    skipped: document.getElementById("filter-skipped"),
+    marked: document.getElementById("filter-marked"),
+  },
+  filterClear: document.getElementById("filter-clear"),
+  filterEmpty: document.getElementById("filter-empty"),
   download: document.getElementById("download-markdown"),
   finish: document.getElementById("finish-download"),
   copyLink: document.getElementById("copy-link"),
@@ -65,6 +72,7 @@ let catalogEntry = null;
 let templateSource = "";
 let sections = [];
 let currentIndex = 0;
+let filters = new Set();
 let saveTimer = null;
 let savePromise = Promise.resolve();
 let dirty = false;
@@ -142,6 +150,68 @@ function isFilled(item) {
 
 function isMarkedBlank(item) {
   return item?.marked_answered === true && !isFilled(item);
+}
+
+function filtersActive() {
+  return filters.size > 0;
+}
+
+function isNewBlank(item) {
+  return Boolean(item) && !isFilled(item) && !isMarkedBlank(item) && item.skipped !== true;
+}
+
+function isSkippedBlank(item) {
+  return Boolean(item) && !isFilled(item) && !isMarkedBlank(item) && item.skipped === true;
+}
+
+function questionMatches(item) {
+  if (!filtersActive()) {
+    return true;
+  }
+  if (filters.has("new") && isNewBlank(item)) { return true; }
+  if (filters.has("skipped") && isSkippedBlank(item)) { return true; }
+  if (filters.has("marked") && isMarkedBlank(item)) { return true; }
+  return false;
+}
+
+function neighborIndex(direction) {
+  if (!session) { return null; }
+  const stepBy = direction < 0 ? -1 : 1;
+  for (let index = currentIndex + stepBy; index >= 0 && index < session.questions.length; index += stepBy) {
+    if (questionMatches(session.questions[index])) { return index; }
+  }
+  return null;
+}
+
+function firstMatchInSection(section) {
+  for (let index = section.start; index <= section.end; index += 1) {
+    if (questionMatches(session.questions[index])) { return index; }
+  }
+  return null;
+}
+
+function noteSkip() {
+  const item = question();
+  if (!item || isFilled({ answer: elements.answer.value }) || markPressed() || item.skipped === true) {
+    return;
+  }
+  item.skipped = true;
+  dirty = true;
+}
+
+function renderFilterButtons() {
+  const counts = { new: 0, skipped: 0, marked: 0 };
+  for (const item of session?.questions || []) {
+    if (isNewBlank(item)) { counts.new += 1; }
+    if (isSkippedBlank(item)) { counts.skipped += 1; }
+    if (isMarkedBlank(item)) { counts.marked += 1; }
+  }
+  for (const name of ["new", "skipped", "marked"]) {
+    const button = elements.filters[name];
+    button.setAttribute("aria-pressed", filters.has(name) ? "true" : "false");
+    button.querySelector(".filter-count").textContent = String(counts[name]);
+  }
+  elements.filterClear.disabled = filters.size === 0;
 }
 
 function markPressed() {
@@ -222,11 +292,19 @@ function renderSections() {
       button.classList.add("has-marked");
     }
 
-    const activate = () => {
-      void navigateTo(section.start);
+    const target = firstMatchInSection(section);
+    if (filtersActive() && target === null) {
+      button.disabled = true;
+      button.title = "No matching questions in this section";
+    }
+    button.addEventListener("click", () => {
+      if (target === null) {
+        showToast("No matching questions in that section.");
+        return;
+      }
+      void navigateTo(target);
       elements.toc.classList.remove("open");
-    };
-    button.addEventListener("click", activate);
+    });
     elements.sectionList.append(button);
   }
 }
@@ -257,6 +335,7 @@ function renderProgress() {
     : `${filled} of ${total} answered`;
   elements.overallProgress.setAttribute("aria-valuenow", String(total === 0 ? 0 : Math.round(((filled + marked) / total) * 100)));
   elements.overallProgress.setAttribute("aria-valuetext", summary);
+  renderFilterButtons();
 }
 
 function renderQuestion({ focus = false } = {}) {
@@ -267,7 +346,27 @@ function renderQuestion({ focus = false } = {}) {
     return;
   }
 
-  elements.questionNumber.textContent = `Question ${currentIndex + 1} of ${session.questions.length}`;
+  if (filtersActive() && !questionMatches(item)) {
+    elements.card.hidden = true;
+    elements.filterEmpty.hidden = false;
+    elements.previous.disabled = true;
+    elements.next.disabled = true;
+    renderSections();
+    renderProgress();
+    elements.app.setAttribute("aria-busy", "false");
+    return;
+  }
+  elements.filterEmpty.hidden = true;
+
+  const shown = filtersActive()
+    ? session.questions.reduce((count, entry, index) => count + (questionMatches(entry) && index <= currentIndex ? 1 : 0), 0)
+    : 0;
+  const shownTotal = filtersActive()
+    ? session.questions.filter((entry) => questionMatches(entry)).length
+    : 0;
+  elements.questionNumber.textContent = filtersActive()
+    ? `Question ${currentIndex + 1} of ${session.questions.length} · ${shown} of ${shownTotal} shown`
+    : `Question ${currentIndex + 1} of ${session.questions.length}`;
   if (section) {
     const questionInSection = currentIndex - section.start + 1;
     elements.questionSection.textContent = `Section ${section.index} · Question ${questionInSection} of ${sectionTotal(section)} — ${sectionTitle(section)}`;
@@ -283,7 +382,10 @@ function renderQuestion({ focus = false } = {}) {
   const onLastQuestion = currentIndex === session.questions.length - 1;
   elements.previous.disabled = false;
   elements.next.disabled = false;
-  elements.previous.setAttribute("aria-label", currentIndex === 0 ? "Already at the first question" : "Previous question");
+  const atFilterStart = filtersActive() && neighborIndex(-1) === null;
+  elements.previous.setAttribute("aria-label", currentIndex === 0 || atFilterStart
+    ? (filtersActive() ? "Already at the first matching question" : "Already at the first question")
+    : "Previous question");
   elements.next.className = onLastQuestion ? "button button-success" : "button button-primary";
   elements.next.textContent = onLastQuestion ? elements.finish.textContent : "Next →";
   elements.next.setAttribute("aria-label", onLastQuestion ? "Finish and download questionnaire" : "Next question");
@@ -305,6 +407,9 @@ function updateLocalAnswer() {
   syncMarkButton(filled ? false : markPressed(), filled);
   session.questions[currentIndex].answer = elements.answer.value;
   session.questions[currentIndex].marked_answered = markPressed();
+  if (isFilled(session.questions[currentIndex]) || markPressed()) {
+    session.questions[currentIndex].skipped = false;
+  }
   elements.card.classList.toggle("marked-blank", isMarkedBlank(session.questions[currentIndex]));
   if (session.completed && dirty) {
     session.completed = false;
@@ -870,14 +975,69 @@ elements.markAnswered.addEventListener("click", () => {
 elements.answer.addEventListener("blur", () => {
   void flushSave().catch(() => undefined);
 });
-elements.previous.addEventListener("click", () => void navigateTo(currentIndex - 1));
+async function step(direction) {
+  if (!ready || navigating) { return; }
+  if (direction > 0 && !elements.card.hidden) { noteSkip(); }
+  const target = neighborIndex(direction);
+  if (target === null) {
+    if (direction > 0 && dirty) {
+      updateLocalAnswer();
+      try { await flushSave(); } catch { /* status already shown */ }
+    }
+    if (filtersActive() && !questionMatches(question())) {
+      const fallback = neighborIndex(-1);
+      if (fallback !== null) {
+        showToast("That was the last matching question.");
+        await navigateTo(fallback);
+        return;
+      }
+      renderQuestion();
+    }
+    renderFilterButtons();
+    showToast(filtersActive()
+      ? (direction < 0 ? "That was the first matching question." : "That was the last matching question.")
+      : (direction < 0 ? "That was the first question." : "That was the last question."));
+    return;
+  }
+  await navigateTo(target);
+}
+
+async function settleFilter() {
+  renderFilterButtons();
+  if (!session || !ready) { return; }
+  if (questionMatches(question())) {
+    renderQuestion();
+    return;
+  }
+  const target = neighborIndex(1) ?? neighborIndex(-1);
+  if (target === null) {
+    renderQuestion();
+    return;
+  }
+  await navigateTo(target);
+}
+
+function toggleFilter(name) {
+  if (filters.has(name)) { filters.delete(name); } else { filters.add(name); }
+  void settleFilter();
+}
+
+elements.filters.new.addEventListener("click", () => toggleFilter("new"));
+elements.filters.skipped.addEventListener("click", () => toggleFilter("skipped"));
+elements.filters.marked.addEventListener("click", () => toggleFilter("marked"));
+elements.filterClear.addEventListener("click", () => {
+  if (filters.size === 0) { return; }
+  filters.clear();
+  void settleFilter();
+});
+elements.previous.addEventListener("click", () => void step(-1));
 elements.next.addEventListener("click", () => {
   if (!ready) { return; }
   if (currentIndex === session.questions.length - 1) {
     void download(true);
     return;
   }
-  void navigateTo(currentIndex + 1);
+  void step(1);
 });
 elements.download.addEventListener("click", () => void download(false));
 elements.finish.addEventListener("click", () => void download(true));
@@ -907,10 +1067,10 @@ document.addEventListener("keydown", (event) => {
   }
   if (event.key === "ArrowLeft") {
     event.preventDefault();
-    void navigateTo(currentIndex - 1);
+    void step(-1);
   } else if (event.key === "ArrowRight") {
     event.preventDefault();
-    void navigateTo(currentIndex + 1);
+    void step(1);
   } else if (event.key === "Home") {
     event.preventDefault();
     if (event.repeat || !ready || elements.markAnswered.disabled) {
