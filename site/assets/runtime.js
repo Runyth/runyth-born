@@ -72,6 +72,7 @@ export async function callCore(operation, { source, saved_questions = [] } = {})
       if (saved && !consumed.has(saved)) {
         question.answer = String(saved.answer ?? "");
         question.marked_answered = saved.marked_answered === true;
+        question.skipped = saved.skipped === true;
         consumed.add(saved);
         reconciliation.exact += 1;
         continue;
@@ -80,6 +81,7 @@ export async function callCore(operation, { source, saved_questions = [] } = {})
         const fallback = savedLabels.get(label)[0];
         question.answer = String(fallback.answer ?? "");
         question.marked_answered = fallback.marked_answered === true;
+        question.skipped = fallback.skipped === true;
         consumed.add(fallback);
         reconciliation.fallback += 1;
       }

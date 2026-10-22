@@ -47,6 +47,19 @@ test("portable resume payload round-trips only the state needed to reconcile ans
   }]);
 });
 
+test("a skipped blank survives a portable resume", async () => {
+  const session = exampleSession();
+  session.questions[0].answer = "";
+  session.questions[0].skipped = true;
+  const restored = await decodeResumePayload(await encodeResumePayload(session));
+  assert.deepEqual(restored.questions, [{
+    id: "core\u001fname#1",
+    fallback_id: "name#1",
+    answer: "",
+    skipped: true,
+  }]);
+});
+
 test("a blank marked answered survives a portable resume", async () => {
   const session = exampleSession();
   session.questions[0].answer = "";

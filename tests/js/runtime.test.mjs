@@ -61,6 +61,14 @@ test("unique-label fallback matches are counted separately from exact matches", 
   assert.equal(result.reconciliation.unmatched, 0);
 });
 
+test("a skipped blank stays blank and keeps the skip", async () => {
+  const result = await callCore("reconcile", { source: source([question]),
+    saved_questions: [{ ...question, answer: "", skipped: true }] });
+  assert.equal(result.questions[0].answer, "");
+  assert.equal(result.questions[0].skipped, true);
+  assert.equal(result.markdown, "- **Name:**\n");
+});
+
 test("a blank marked answered stays blank and keeps its mark", async () => {
   const result = await callCore("reconcile", { source: source([question]),
     saved_questions: [{ ...question, answer: "", marked_answered: true }] });
