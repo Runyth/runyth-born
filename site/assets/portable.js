@@ -86,6 +86,9 @@ function resumableSnapshot(session) {
         if (question.marked_answered === true) {
           saved.marked_answered = true;
         }
+        if (question.skipped === true) {
+          saved.skipped = true;
+        }
         return saved;
       })
       : [],
@@ -160,6 +163,9 @@ export async function decodeResumePayload(payload) {
     };
     if (question?.marked_answered === true) {
       saved.marked_answered = true;
+    }
+    if (question?.skipped === true) {
+      saved.skipped = true;
     }
     return saved;
   });

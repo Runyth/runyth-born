@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Remember when Next leaves a question blank, so that skip can be saved and resumed apart from a question that has not been opened.
+
 ## 3.0.3 - 2026-10-15
 
 - Show resume dates as YYYY/MM/DD, with the local time after the date, instead of the browser's locale order.
