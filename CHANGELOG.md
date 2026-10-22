@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 3.1.0 - 2026-10-22
+
 - Remember when Next leaves a question blank, so that skip can be saved and resumed apart from a question that has not been opened.
 - Filter the wizard to new, skipped, or marked questions, separately or together, and clear those filters to show every question again.
 
