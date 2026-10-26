@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 3.2.1 - 2026-10-26
+
 - Keep bold, italics, and citation styling from the questionnaire in the guidance shown with each question.
 - Open that guidance in a larger view, and center the contents close button on a narrow screen.
 
