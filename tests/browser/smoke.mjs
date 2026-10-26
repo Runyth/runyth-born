@@ -313,7 +313,7 @@ try {
   await cleanupPage.locator("#finish-delete").click();
   assert.equal(await cleanupPage.locator("#finish-delete").textContent(), "Confirm delete");
   await cleanupPage.locator("#finish-delete").click();
-  await cleanupPage.waitForURL(/index\.html$/u);
+  await cleanupPage.waitForURL((url) => url.pathname === fixtures[0][0]);
   await cleanupPage.locator("#template-grid").waitFor();
   assert.equal(await cleanupPage.locator("#recent-section").isVisible(), false);
   await cleanup.close();
@@ -386,7 +386,7 @@ try {
   await wizardPage.locator("#finish-delete").click();
   assert.equal(await wizardPage.locator("#finish-delete").textContent(), "Confirm delete");
   await wizardPage.locator("#finish-delete").click();
-  await wizardPage.waitForURL(/index\.html$/u);
+  await wizardPage.waitForURL((url) => url.pathname === fixtures[0][0]);
   await wizardPage.goto(origin + fixtures[0][0]);
   await wizardPage.locator("#template-grid").waitFor();
   assert.equal(await wizardPage.locator("#recent-section").isVisible(), false, "the migrated questionnaire must not return");
@@ -448,7 +448,7 @@ try {
   await deleter.locator("#finish-delete").click();
   assert.equal(await deleter.locator("#finish-delete").textContent(), "Confirm delete");
   await deleter.locator("#finish-delete").click();
-  await deleter.waitForURL(/index\.html$/u);
+  await deleter.waitForURL((url) => url.pathname === fixtures[0][0]);
   assert.equal(await deleter.locator("#recent-section").isVisible(), false, "the deleted questionnaire must not be listed");
 
   // Only now does the queued save execute — with no new editing afterwards.
