@@ -62,11 +62,11 @@ Think of one small thing.
 	if len(questions) != 1 {
 		t.Fatalf("questions = %d", len(questions))
 	}
-	if questions[0].Context[0] != "Write this once." {
+	if guidancePlain(questions[0].Context[0].Inlines) != "Write this once." {
 		t.Fatalf("preamble was not shown on the first question: %#v", questions[0].Context)
 	}
-	joined := strings.Join(questions[0].Context, "\n")
-	for _, want := range []string{"Think of one small thing.", "- an NPC", "- a shrine"} {
+	joined := plainGuidance(questions[0].Context)
+	for _, want := range []string{"Think of one small thing.", "an NPC", "a shrine"} {
 		if !strings.Contains(joined, want) {
 			t.Fatalf("context = %#v, missing %q", questions[0].Context, want)
 		}
@@ -104,11 +104,11 @@ Rumours may be false.
 	if len(questions) != 2 {
 		t.Fatalf("questions = %#v", questions)
 	}
-	faction := strings.Join(questions[0].Context, "\n")
+	faction := plainGuidance(questions[0].Context)
 	if !strings.Contains(faction, "Keep it local.") || !strings.Contains(faction, "A faction may be a family.") {
 		t.Fatalf("faction context = %#v", questions[0].Context)
 	}
-	rumour := strings.Join(questions[1].Context, "\n")
+	rumour := plainGuidance(questions[1].Context)
 	if strings.Contains(rumour, "A faction may be a family.") || !strings.Contains(rumour, "Keep it local.") || !strings.Contains(rumour, "Rumours may be false.") {
 		t.Fatalf("rumour context = %#v", questions[1].Context)
 	}
@@ -133,20 +133,54 @@ func TestPublishedBackstoryMatchesTheQuestionnaireSchema(t *testing.T) {
 	if len(questions) != 150 {
 		t.Fatalf("question count = %d", len(questions))
 	}
-	if !strings.Contains(strings.Join(questions[0].Context, "\n"), "EVERYTHING IS OPTIONAL!") {
+	if !strings.Contains(plainGuidance(questions[0].Context), "EVERYTHING IS OPTIONAL!") {
 		t.Fatalf("preamble missing from the first question: %#v", questions[0].Context)
 	}
+	if !citationHasStrong(questions[0].Context, "Important to me") {
+		t.Fatalf("citation styling missing: %#v", questions[0].Context)
+	}
 	started := questionByLabel(t, questions, "The thing")
-	if !strings.Contains(strings.Join(started.Context, "\n"), "Think of one small thing") {
+	if !strings.Contains(plainGuidance(started.Context), "Think of one small thing") {
 		t.Fatalf("getting started context = %#v", started.Context)
 	}
 	faction := questionByLabel(t, questions, "Name and type")
-	if !strings.Contains(strings.Join(faction.Context, "\n"), "A faction may be a family") {
+	if !strings.Contains(plainGuidance(faction.Context), "A faction may be a family") {
 		t.Fatalf("faction context = %#v", faction.Context)
 	}
-	if !strings.Contains(strings.Join(faction.Context, "\n"), "Keep it local and playable.") {
+	if !strings.Contains(plainGuidance(faction.Context), "Keep it local and playable.") {
 		t.Fatalf("hometown guidance missing: %#v", faction.Context)
 	}
+}
+
+func citationHasStrong(blocks []GuidanceBlock, text string) bool {
+	for _, block := range blocks {
+		if block.Type != "blockquote" {
+			continue
+		}
+		for _, part := range block.Blocks {
+			for _, inline := range part.Inlines {
+				if inline.Strong && inline.Text == text {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
+func plainGuidance(blocks []GuidanceBlock) string {
+	var builder strings.Builder
+	for _, block := range blocks {
+		if block.Type == "blockquote" {
+			builder.WriteString(plainGuidance(block.Blocks))
+			continue
+		}
+		for _, inline := range block.Inlines {
+			builder.WriteString(inline.Text)
+		}
+		builder.WriteByte('\n')
+	}
+	return builder.String()
 }
 
 func questionByLabel(t *testing.T, questions []Question, label string) Question {

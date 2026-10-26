@@ -14,7 +14,7 @@ import (
 //	chapter      = H2, guidance?, (question-list | subchapter+)
 //	subchapter   = H3, guidance?, (question-list | detail+)
 //	detail       = H4, guidance?, question-list
-//	guidance     = (paragraph | example-list)+
+//	guidance     = (paragraph | blockquote | example-list)+
 //	question-list = one unordered list; every item is exactly "- **Label:**"
 //	example-list  = one unordered list; no item is a question
 //
@@ -51,8 +51,8 @@ func (parser *schemaParser) document() error {
 	if err := parser.heading(1, "document title"); err != nil {
 		return err
 	}
-	for parser.kind() == "paragraph" {
-		if err := parser.paragraph(); err != nil {
+	for parser.kind() == "paragraph" || parser.kind() == "blockquote" {
+		if err := parser.guidanceNode("preamble"); err != nil {
 			return err
 		}
 	}
@@ -140,8 +140,8 @@ func (parser *schemaParser) detail() error {
 func (parser *schemaParser) guidance(owner string) error {
 	for {
 		switch parser.kind() {
-		case "paragraph":
-			if err := parser.paragraph(); err != nil {
+		case "paragraph", "blockquote":
+			if err := parser.guidanceNode(owner); err != nil {
 				return err
 			}
 		case "list":
@@ -185,12 +185,70 @@ func (parser *schemaParser) headingTitle(depth int, role string) (string, error)
 	return title, nil
 }
 
+func (parser *schemaParser) guidanceNode(owner string) error {
+	if parser.kind() == "blockquote" {
+		return parser.blockquote(owner)
+	}
+	return parser.paragraph()
+}
+
 func (parser *schemaParser) paragraph() error {
 	node, _ := parser.node()
 	if cleanText(PlainText(node)) == "" {
 		return fmt.Errorf("paragraph %d is empty", parser.index+1)
 	}
+	if err := validateGuidanceInlines(node); err != nil {
+		return fmt.Errorf("paragraph %d: %w", parser.index+1, err)
+	}
 	parser.index++
+	return nil
+}
+
+func (parser *schemaParser) blockquote(owner string) error {
+	node, ok := parser.node()
+	if !ok || nodeType(node) != "blockquote" {
+		return fmt.Errorf("%s", parser.unexpected(fmt.Sprintf("a citation under %q", owner)))
+	}
+	values, ok := children(node)
+	if !ok || len(values) == 0 {
+		return fmt.Errorf("citation under %q is empty", owner)
+	}
+	for index, value := range values {
+		child, ok := value.(map[string]any)
+		if !ok || nodeType(child) != "paragraph" {
+			return fmt.Errorf("citation under %q may contain only paragraphs", owner)
+		}
+		if cleanText(PlainText(child)) == "" {
+			return fmt.Errorf("citation paragraph %d under %q is empty", index+1, owner)
+		}
+		if err := validateGuidanceInlines(child); err != nil {
+			return fmt.Errorf("citation under %q: %w", owner, err)
+		}
+	}
+	parser.index++
+	return nil
+}
+
+func validateGuidanceInlines(node map[string]any) error {
+	values, ok := children(node)
+	if !ok {
+		return nil
+	}
+	for _, value := range values {
+		child, ok := value.(map[string]any)
+		if !ok {
+			continue
+		}
+		switch nodeType(child) {
+		case "text", "inlineCode", "break":
+		case "strong", "emphasis":
+			if err := validateGuidanceInlines(child); err != nil {
+				return err
+			}
+		default:
+			return fmt.Errorf("inline %q is not allowed in guidance", nodeType(child))
+		}
+	}
 	return nil
 }
 

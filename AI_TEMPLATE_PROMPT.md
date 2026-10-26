@@ -22,7 +22,7 @@ preamble      = paragraph+
 chapter       = H2, guidance?, (question-list | subchapter+)
 subchapter    = H3, guidance?, (question-list | detail+)
 detail        = H4, guidance?, question-list
-guidance      = (paragraph | example-list)+
+guidance      = (paragraph | blockquote | example-list)+
 question-list = one unordered list; every item is exactly "- **Label:**"
 example-list  = one unordered list; no item is a question
 ```
@@ -34,6 +34,7 @@ example-list  = one unordered list; no item is a question
 - A `####` detail contains guidance, if any, and then exactly one question list.
 - Do not use heading depths 5 or 6. Do not skip a depth.
 - Put each heading's explanation immediately after that heading, before its question list or its first child heading. A deeper heading keeps that explanation. A heading of the same depth replaces only its own explanation.
+- A citation is a blockquote containing only paragraphs. Bold, italics, and inline code inside guidance are kept and shown. Do not put links, images, or raw HTML in guidance.
 - Do not put anything after a question list except the next legal heading.
 - Do not use thematic breaks, blockquotes, tables, code fences, raw HTML, task lists, or ordered lists.
 - Keep heading names and question labels stable between template versions whenever their meaning has not changed. This allows saved answers to merge into updated templates.
