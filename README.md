@@ -1,6 +1,6 @@
 # Runyth Born
 
-Runyth Born is a completely static browser application for filling reusable Markdown questionnaires correctly. Version 3.2.2 requires no application server, database, container, reverse proxy, writable server volume, or backend API.
+Runyth Born is a completely static browser application for filling reusable Markdown questionnaires correctly. Version 3.2.3 requires no application server, database, container, reverse proxy, writable server volume, or backend API.
 
 The deployed site consists only of HTML, CSS, JavaScript, and repository-backed JSON template data, making GitHub Pages through GitHub Actions the preferred deployment target.
 
