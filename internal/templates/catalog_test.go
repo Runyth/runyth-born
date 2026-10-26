@@ -10,7 +10,7 @@ func TestCatalogListsValidTemplatesAndIgnoresOtherFiles(t *testing.T) {
 	t.Parallel()
 
 	directory := t.TempDir()
-	valid := `{"type":"root","children":[{"type":"heading","depth":1,"children":[{"type":"text","value":"Example"}]},{"type":"list","ordered":false,"children":[{"type":"listItem","children":[{"type":"paragraph","children":[{"type":"strong","children":[{"type":"text","value":"Name:"}]}]}]}]}]}`
+	valid := `{"type":"root","children":[{"type":"heading","depth":1,"children":[{"type":"text","value":"Example"}]},{"type":"heading","depth":2,"children":[{"type":"text","value":"Core"}]},{"type":"list","ordered":false,"children":[{"type":"listItem","children":[{"type":"paragraph","children":[{"type":"strong","children":[{"type":"text","value":"Name:"}]}]}]}]}]}`
 	if err := os.WriteFile(filepath.Join(directory, "example.mdast.json"), []byte(valid), 0o600); err != nil {
 		t.Fatal(err)
 	}

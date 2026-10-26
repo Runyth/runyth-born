@@ -154,6 +154,9 @@ func ExtractQuestions(document Document) ([]Question, error) {
 		exactOrdinals: map[string]int{},
 	}
 	scanner.walk(map[string]any(document), nil, false)
+	if len(scanner.questions) > 0 && len(scanner.preamble) > 0 {
+		scanner.questions[0].Context = append(append([]string(nil), scanner.preamble...), scanner.questions[0].Context...)
+	}
 	return scanner.questions, nil
 }
 
@@ -271,7 +274,9 @@ func PlainText(node map[string]any) string {
 type questionScanner struct {
 	questions     []Question
 	headings      []string
-	context       []string
+	guidance      [7][]string
+	preamble      []string
+	depth         int
 	labelOrdinals map[string]int
 	exactOrdinals map[string]int
 }
@@ -293,7 +298,10 @@ func (scanner *questionScanner) walk(node map[string]any, path []int, insideList
 		for index := depth; index < len(scanner.headings); index++ {
 			scanner.headings[index] = ""
 		}
-		scanner.context = nil
+		scanner.depth = depth
+		for index := depth; index < len(scanner.guidance); index++ {
+			scanner.guidance[index] = nil
+		}
 		return
 
 	case "paragraph":
@@ -366,7 +374,7 @@ func (scanner *questionScanner) addQuestion(paragraph map[string]any, path []int
 		Path:         append([]int(nil), path...),
 		Label:        label,
 		Breadcrumb:   append([]string(nil), breadcrumb...),
-		Context:      append([]string(nil), scanner.context...),
+		Context:      scanner.questionContext(),
 		Answer:       answer,
 		ID:           exactBase + "#" + strconv.Itoa(exactOrdinal),
 		FallbackID:   fallbackBase + "#" + strconv.Itoa(labelOrdinal),
@@ -376,14 +384,22 @@ func (scanner *questionScanner) addQuestion(paragraph map[string]any, path []int
 
 func (scanner *questionScanner) addContext(text string) {
 	text = cleanText(text)
-	if text == "" {
+	if text == "" || scanner.depth >= len(scanner.guidance) {
 		return
 	}
-	scanner.context = append(scanner.context, text)
-	const maximumContextItems = 12
-	if len(scanner.context) > maximumContextItems {
-		scanner.context = append([]string(nil), scanner.context[len(scanner.context)-maximumContextItems:]...)
+	if scanner.depth < 2 {
+		scanner.preamble = append(scanner.preamble, text)
+		return
 	}
+	scanner.guidance[scanner.depth] = append(scanner.guidance[scanner.depth], text)
+}
+
+func (scanner *questionScanner) questionContext() []string {
+	var context []string
+	for depth := 2; depth <= scanner.depth && depth < len(scanner.guidance); depth++ {
+		context = append(context, scanner.guidance[depth]...)
+	}
+	return append([]string(nil), context...)
 }
 
 func questionParagraph(listItem map[string]any, listItemPath []int) (map[string]any, []int, bool) {

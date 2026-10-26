@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Require every questionnaire to use one heading grammar, and keep each heading's explanation with the questions under it instead of dropping that explanation at the next deeper heading.
+
 ## 3.1.0 - 2026-10-22
 
 - Remember when Next leaves a question blank, so that skip can be saved and resumed apart from a question that has not been opened.

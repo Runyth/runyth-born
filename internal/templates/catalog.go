@@ -117,6 +117,9 @@ func (catalog *Catalog) loadEntry(path string) (Entry, error) {
 	if err != nil {
 		return Entry{}, err
 	}
+	if err := mdast.ValidateQuestionnaire(document); err != nil {
+		return Entry{}, err
+	}
 	questions, err := mdast.ExtractQuestions(document)
 	if err != nil {
 		return Entry{}, err

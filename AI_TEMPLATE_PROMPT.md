@@ -14,9 +14,28 @@ Create the requested template while obeying every rule below.
 
 ## Document structure
 
-- Use Markdown headings from `#` through `######` to express the document, section, and subsection hierarchy.
-- Put explanations, disclaimers, examples, and instructions in ordinary paragraphs or ordinary lists.
-- The heading structure may be as deep or as shallow as the requested template requires.
+The document must match this grammar exactly. The build rejects every other shape.
+
+```text
+document      = H1, preamble?, chapter+
+preamble      = paragraph+
+chapter       = H2, guidance?, (question-list | subchapter+)
+subchapter    = H3, guidance?, (question-list | detail+)
+detail        = H4, guidance?, question-list
+guidance      = (paragraph | example-list)+
+question-list = one unordered list; every item is exactly "- **Label:**"
+example-list  = one unordered list; no item is a question
+```
+
+- Start with one `#` title.
+- Put document-wide notes in paragraphs immediately after the title and before the first `##` chapter. Those paragraphs are the preamble. They are shown with the first question only.
+- A `##` chapter contains either one question list or one or more `###` subchapters. It cannot contain both.
+- A `###` subchapter contains either one question list or one or more `####` details. It cannot contain both.
+- A `####` detail contains guidance, if any, and then exactly one question list.
+- Do not use heading depths 5 or 6. Do not skip a depth.
+- Put each heading's explanation immediately after that heading, before its question list or its first child heading. A deeper heading keeps that explanation. A heading of the same depth replaces only its own explanation.
+- Do not put anything after a question list except the next legal heading.
+- Do not use thematic breaks, blockquotes, tables, code fences, raw HTML, task lists, or ordered lists.
 - Keep heading names and question labels stable between template versions whenever their meaning has not changed. This allows saved answers to merge into updated templates.
 - Prefer unique, descriptive question labels. Repeated labels are supported under different headings, but unnecessary duplication makes template updates less reliable.
 
@@ -74,7 +93,7 @@ Any list item whose first meaningful content is bold text ending in a colon is t
 
 - Do not format ordinary example bullets, warnings, labels, or glossary entries as bold text ending in a colon.
 - For non-fillable bullets, use plain text, or ensure their initial bold text does not end in a colon.
-- Put guidance before the related questions as paragraphs or ordinary bullets.
+- Put guidance in the heading's guidance block, before its question list or its first child heading.
 - Do not place fillable questions inside tables, blockquotes, code fences, raw HTML, or plain paragraphs. They must use the exact list-item form above.
 
 Safe guidance and examples:
@@ -109,7 +128,7 @@ Before returning the document, silently verify all of the following:
 - Every intended question is blank after the closing `**`.
 - No ordinary bullet accidentally matches the question convention.
 - Questions are not placed in tables, blockquotes, code fences, HTML, or task lists.
-- Headings form a sensible hierarchy.
+- The document matches the grammar above, including heading depth and the placement of every guidance block.
 - The complete response contains only the Markdown template.
 
 ## Template to create
