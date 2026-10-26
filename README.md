@@ -106,7 +106,7 @@ Keep section headings and question labels stable when the meaning of a question 
 
 ## Creating a template
 
-Write ordinary Markdown using this question convention:
+Write ordinary Markdown using the questionnaire grammar in [TEMPLATE_FORMAT.md](TEMPLATE_FORMAT.md). A chapter is a `##` heading followed by either one question list or deeper headings, never both. Guidance stays with the heading it follows, and a deeper heading keeps it:
 
 ```markdown
 # Character Backstory

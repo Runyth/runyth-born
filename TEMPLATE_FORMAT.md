@@ -47,27 +47,64 @@ Existing answer text is recognised too:
 - **Name:** Akito
 ```
 
-## Sections and context
+## Questionnaire schema
 
-Headings establish the current breadcrumb. Question sections are derived from that breadcrumb. Ordinary paragraphs and non-question list items before a question are carried into the guided UI as context, with a bounded recent-context window.
+The build rejects a template that does not match this grammar. There is no alternate interpretation.
+
+```text
+document      = H1, preamble?, chapter+
+preamble      = paragraph+
+chapter       = H2, guidance?, (question-list | subchapter+)
+subchapter    = H3, guidance?, (question-list | detail+)
+detail        = H4, guidance?, question-list
+guidance      = (paragraph | example-list)+
+question-list = one unordered list; every item is exactly "- **Label:**"
+example-list  = one unordered list; no item is a question
+```
+
+Rules:
+
+- The first node is one depth-1 title. Depths 5 and 6 are rejected. A heading may not skip a depth.
+- The preamble is zero or more paragraphs after the title and before the first chapter. It is shown with the first question and is not repeated later.
+- A chapter is one depth-2 heading. It then contains either one question list or one or more subchapters, never both, and never neither.
+- A subchapter is one depth-3 heading. It then contains either one question list or one or more details, never both.
+- A detail is one depth-4 heading followed by one question list.
+- Guidance is the paragraphs and example lists that follow a heading immediately. The next heading or question list closes it.
+- A question list is one unordered list. Every item is one paragraph whose only content is a bold label ending in a colon. No answer text is allowed in the template.
+- An example list is one unordered list. No item may be a question. A question list and an example list are never the same list.
+- Nothing follows a question list except the next legal heading: the next sibling, the next ancestor, or the end of the document.
+- Thematic breaks, blockquotes, tables, code, raw HTML, task lists, and ordered lists are rejected.
+- A deeper heading keeps the guidance of its parent headings. A heading of the same depth replaces only its own guidance.
+- Every guidance item is kept. There is no sliding window and no silent truncation.
+
+`ValidateQuestionnaire` is the schema gate. Template listing and compilation both call it before questions are extracted.
 
 Example:
 
 ```markdown
 # Character Backstory
 
-## Core
-
 Brief answers are sufficient.
+
+## Core
 
 - **Name:**
 - **Age:**
 
-## Origin
+## Hometown
 
-Describe what shaped the character before adventuring.
+Keep it local.
 
-- **Where were you raised?:**
+### Local Factions
+
+A faction may be a family.
+
+- a guild
+- a temple
+
+#### Faction 1
+
+- **Name and type:**
 ```
 
 ## Stable template evolution

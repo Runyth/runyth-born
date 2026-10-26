@@ -30,6 +30,9 @@ func Analyze(source []byte, extension string, saved []mdast.Question) (Result, e
 	if err != nil {
 		return Result{}, err
 	}
+	if err := mdast.ValidateQuestionnaire(document); err != nil {
+		return Result{}, err
+	}
 
 	fingerprint, err := mdast.Fingerprint(document)
 	if err != nil {

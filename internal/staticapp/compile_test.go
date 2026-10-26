@@ -46,6 +46,11 @@ children:
     children:
       - type: text
         value: Inline Hash Template
+  - type: heading
+    depth: 2
+    children:
+      - type: text
+        value: Core
   - type: list
     children:
       - type: listItem
@@ -89,6 +94,11 @@ children:
         value: |2-
           Brief answers are sufficient.
             Explicit depths count too.
+  - type: heading
+    depth: 2
+    children:
+      - type: text
+        value: Core
   - type: list
     ordered: false
     spread: false
@@ -131,6 +141,11 @@ children:
       children:
            - type: text
              value: Brief answers are sufficient.
+    - type: heading
+      depth: 2
+      children:
+           - type: text
+             value: Core
     - type: list
       spread: false
       children:
@@ -167,6 +182,11 @@ children:
       children:
            - type: text
              value: Quoted Key Template
+    - type: heading
+      depth: 2
+      children:
+           - type: text
+             value: Core
     - type: list
       ordered: false
       start: null

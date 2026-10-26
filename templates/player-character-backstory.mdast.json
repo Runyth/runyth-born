@@ -102,38 +102,13 @@
       }
     },
     {
-      "type": "heading",
+      "type": "paragraph",
       "children": [
         {
           "type": "text",
-          "value": "Disclaimer",
-          "position": {
-            "start": {
-              "line": 7,
-              "column": 4,
-              "offset": 204
-            },
-            "end": {
-              "line": 7,
-              "column": 14,
-              "offset": 214
-            }
-          }
+          "value": "Disclaimer"
         }
-      ],
-      "position": {
-        "start": {
-          "line": 7,
-          "column": 1,
-          "offset": 201
-        },
-        "end": {
-          "line": 7,
-          "column": 14,
-          "offset": 214
-        }
-      },
-      "depth": 2
+      ]
     },
     {
       "type": "paragraph",
@@ -318,41 +293,24 @@
       }
     },
     {
-      "type": "blockquote",
+      "type": "paragraph",
       "children": [
         {
-          "type": "paragraph",
+          "type": "strong",
           "children": [
             {
-              "type": "strong",
-              "children": [
-                {
-                  "type": "text",
-                  "value": "Important to me",
-                  "position": {
-                    "start": {
-                      "line": 19,
-                      "column": 5,
-                      "offset": 864
-                    },
-                    "end": {
-                      "line": 19,
-                      "column": 20,
-                      "offset": 879
-                    }
-                  }
-                }
-              ],
+              "type": "text",
+              "value": "Important to me",
               "position": {
                 "start": {
                   "line": 19,
-                  "column": 3,
-                  "offset": 862
+                  "column": 5,
+                  "offset": 864
                 },
                 "end": {
                   "line": 19,
-                  "column": 22,
-                  "offset": 881
+                  "column": 20,
+                  "offset": 879
                 }
               }
             }
@@ -374,8 +332,8 @@
       "position": {
         "start": {
           "line": 19,
-          "column": 1,
-          "offset": 860
+          "column": 3,
+          "offset": 862
         },
         "end": {
           "line": 19,
@@ -414,21 +372,6 @@
           "line": 21,
           "column": 126,
           "offset": 1008
-        }
-      }
-    },
-    {
-      "type": "thematicBreak",
-      "position": {
-        "start": {
-          "line": 23,
-          "column": 1,
-          "offset": 1010
-        },
-        "end": {
-          "line": 23,
-          "column": 4,
-          "offset": 1013
         }
       }
     },
@@ -1265,7 +1208,7 @@
           "offset": 1643
         }
       },
-      "depth": 3
+      "depth": 2
     },
     {
       "type": "paragraph",
@@ -1590,21 +1533,6 @@
       },
       "ordered": false,
       "spread": false
-    },
-    {
-      "type": "thematicBreak",
-      "position": {
-        "start": {
-          "line": 48,
-          "column": 1,
-          "offset": 1924
-        },
-        "end": {
-          "line": 48,
-          "column": 4,
-          "offset": 1927
-        }
-      }
     },
     {
       "type": "heading",
@@ -2101,21 +2029,6 @@
       "spread": false
     },
     {
-      "type": "thematicBreak",
-      "position": {
-        "start": {
-          "line": 61,
-          "column": 1,
-          "offset": 2533
-        },
-        "end": {
-          "line": 61,
-          "column": 4,
-          "offset": 2536
-        }
-      }
-    },
-    {
       "type": "heading",
       "children": [
         {
@@ -2608,21 +2521,6 @@
       },
       "ordered": false,
       "spread": false
-    },
-    {
-      "type": "thematicBreak",
-      "position": {
-        "start": {
-          "line": 74,
-          "column": 1,
-          "offset": 2945
-        },
-        "end": {
-          "line": 74,
-          "column": 4,
-          "offset": 2948
-        }
-      }
     },
     {
       "type": "heading",
@@ -4379,21 +4277,6 @@
       "spread": false
     },
     {
-      "type": "thematicBreak",
-      "position": {
-        "start": {
-          "line": 116,
-          "column": 1,
-          "offset": 3938
-        },
-        "end": {
-          "line": 116,
-          "column": 4,
-          "offset": 3941
-        }
-      }
-    },
-    {
       "type": "heading",
       "children": [
         {
@@ -4873,6 +4756,39 @@
       "depth": 3
     },
     {
+      "type": "paragraph",
+      "children": [
+        {
+          "type": "text",
+          "value": "Further prompts:",
+          "position": {
+            "start": {
+              "line": 137,
+              "column": 1,
+              "offset": 4319
+            },
+            "end": {
+              "line": 137,
+              "column": 17,
+              "offset": 4335
+            }
+          }
+        }
+      ],
+      "position": {
+        "start": {
+          "line": 137,
+          "column": 1,
+          "offset": 4319
+        },
+        "end": {
+          "line": 137,
+          "column": 17,
+          "offset": 4335
+        }
+      }
+    },
+    {
       "type": "list",
       "children": [
         {
@@ -5010,59 +4926,7 @@
             }
           },
           "spread": false
-        }
-      ],
-      "position": {
-        "start": {
-          "line": 134,
-          "column": 1,
-          "offset": 4265
         },
-        "end": {
-          "line": 136,
-          "column": 1,
-          "offset": 4318
-        }
-      },
-      "ordered": false,
-      "spread": false
-    },
-    {
-      "type": "paragraph",
-      "children": [
-        {
-          "type": "text",
-          "value": "Further prompts:",
-          "position": {
-            "start": {
-              "line": 137,
-              "column": 1,
-              "offset": 4319
-            },
-            "end": {
-              "line": 137,
-              "column": 17,
-              "offset": 4335
-            }
-          }
-        }
-      ],
-      "position": {
-        "start": {
-          "line": 137,
-          "column": 1,
-          "offset": 4319
-        },
-        "end": {
-          "line": 137,
-          "column": 17,
-          "offset": 4335
-        }
-      }
-    },
-    {
-      "type": "list",
-      "children": [
         {
           "type": "listItem",
           "children": [
@@ -5350,21 +5214,6 @@
       },
       "ordered": false,
       "spread": false
-    },
-    {
-      "type": "thematicBreak",
-      "position": {
-        "start": {
-          "line": 144,
-          "column": 1,
-          "offset": 4507
-        },
-        "end": {
-          "line": 144,
-          "column": 4,
-          "offset": 4510
-        }
-      }
     },
     {
       "type": "heading",
@@ -7974,6 +7823,39 @@
       "depth": 4
     },
     {
+      "type": "paragraph",
+      "children": [
+        {
+          "type": "text",
+          "value": "Suitable locations include a mill, ferry crossing, shrine, cemetery, workshop, inn, mine, fishing cove, abandoned watchtower, ruined bridge, warehouse, communal oven, orchard, quarry, market square, or roadside monument.",
+          "position": {
+            "start": {
+              "line": 212,
+              "column": 1,
+              "offset": 6478
+            },
+            "end": {
+              "line": 212,
+              "column": 221,
+              "offset": 6698
+            }
+          }
+        }
+      ],
+      "position": {
+        "start": {
+          "line": 212,
+          "column": 1,
+          "offset": 6478
+        },
+        "end": {
+          "line": 212,
+          "column": 221,
+          "offset": 6698
+        }
+      }
+    },
+    {
       "type": "list",
       "children": [
         {
@@ -8331,39 +8213,6 @@
       },
       "ordered": false,
       "spread": false
-    },
-    {
-      "type": "paragraph",
-      "children": [
-        {
-          "type": "text",
-          "value": "Suitable locations include a mill, ferry crossing, shrine, cemetery, workshop, inn, mine, fishing cove, abandoned watchtower, ruined bridge, warehouse, communal oven, orchard, quarry, market square, or roadside monument.",
-          "position": {
-            "start": {
-              "line": 212,
-              "column": 1,
-              "offset": 6478
-            },
-            "end": {
-              "line": 212,
-              "column": 221,
-              "offset": 6698
-            }
-          }
-        }
-      ],
-      "position": {
-        "start": {
-          "line": 212,
-          "column": 1,
-          "offset": 6478
-        },
-        "end": {
-          "line": 212,
-          "column": 221,
-          "offset": 6698
-        }
-      }
     },
     {
       "type": "heading",
@@ -10239,229 +10088,6 @@
       }
     },
     {
-      "type": "list",
-      "children": [
-        {
-          "type": "listItem",
-          "children": [
-            {
-              "type": "paragraph",
-              "children": [
-                {
-                  "type": "strong",
-                  "children": [
-                    {
-                      "type": "text",
-                      "value": "Problem 1:",
-                      "position": {
-                        "start": {
-                          "line": 261,
-                          "column": 5,
-                          "offset": 8035
-                        },
-                        "end": {
-                          "line": 261,
-                          "column": 15,
-                          "offset": 8045
-                        }
-                      }
-                    }
-                  ],
-                  "position": {
-                    "start": {
-                      "line": 261,
-                      "column": 3,
-                      "offset": 8033
-                    },
-                    "end": {
-                      "line": 261,
-                      "column": 17,
-                      "offset": 8047
-                    }
-                  }
-                }
-              ],
-              "position": {
-                "start": {
-                  "line": 261,
-                  "column": 3,
-                  "offset": 8033
-                },
-                "end": {
-                  "line": 261,
-                  "column": 19,
-                  "offset": 8049
-                }
-              }
-            }
-          ],
-          "position": {
-            "start": {
-              "line": 261,
-              "column": 1,
-              "offset": 8031
-            },
-            "end": {
-              "line": 261,
-              "column": 19,
-              "offset": 8049
-            }
-          },
-          "spread": false
-        },
-        {
-          "type": "listItem",
-          "children": [
-            {
-              "type": "paragraph",
-              "children": [
-                {
-                  "type": "strong",
-                  "children": [
-                    {
-                      "type": "text",
-                      "value": "Problem 2:",
-                      "position": {
-                        "start": {
-                          "line": 262,
-                          "column": 5,
-                          "offset": 8054
-                        },
-                        "end": {
-                          "line": 262,
-                          "column": 15,
-                          "offset": 8064
-                        }
-                      }
-                    }
-                  ],
-                  "position": {
-                    "start": {
-                      "line": 262,
-                      "column": 3,
-                      "offset": 8052
-                    },
-                    "end": {
-                      "line": 262,
-                      "column": 17,
-                      "offset": 8066
-                    }
-                  }
-                }
-              ],
-              "position": {
-                "start": {
-                  "line": 262,
-                  "column": 3,
-                  "offset": 8052
-                },
-                "end": {
-                  "line": 262,
-                  "column": 19,
-                  "offset": 8068
-                }
-              }
-            }
-          ],
-          "position": {
-            "start": {
-              "line": 262,
-              "column": 1,
-              "offset": 8050
-            },
-            "end": {
-              "line": 262,
-              "column": 19,
-              "offset": 8068
-            }
-          },
-          "spread": false
-        },
-        {
-          "type": "listItem",
-          "children": [
-            {
-              "type": "paragraph",
-              "children": [
-                {
-                  "type": "strong",
-                  "children": [
-                    {
-                      "type": "text",
-                      "value": "Problem 3:",
-                      "position": {
-                        "start": {
-                          "line": 263,
-                          "column": 5,
-                          "offset": 8073
-                        },
-                        "end": {
-                          "line": 263,
-                          "column": 15,
-                          "offset": 8083
-                        }
-                      }
-                    }
-                  ],
-                  "position": {
-                    "start": {
-                      "line": 263,
-                      "column": 3,
-                      "offset": 8071
-                    },
-                    "end": {
-                      "line": 263,
-                      "column": 17,
-                      "offset": 8085
-                    }
-                  }
-                }
-              ],
-              "position": {
-                "start": {
-                  "line": 263,
-                  "column": 3,
-                  "offset": 8071
-                },
-                "end": {
-                  "line": 263,
-                  "column": 19,
-                  "offset": 8087
-                }
-              }
-            }
-          ],
-          "position": {
-            "start": {
-              "line": 263,
-              "column": 1,
-              "offset": 8069
-            },
-            "end": {
-              "line": 264,
-              "column": 1,
-              "offset": 8088
-            }
-          },
-          "spread": false
-        }
-      ],
-      "position": {
-        "start": {
-          "line": 261,
-          "column": 1,
-          "offset": 8031
-        },
-        "end": {
-          "line": 264,
-          "column": 1,
-          "offset": 8088
-        }
-      },
-      "ordered": false,
-      "spread": false
-    },
-    {
       "type": "paragraph",
       "children": [
         {
@@ -11177,6 +10803,229 @@
       "spread": false
     },
     {
+      "type": "list",
+      "children": [
+        {
+          "type": "listItem",
+          "children": [
+            {
+              "type": "paragraph",
+              "children": [
+                {
+                  "type": "strong",
+                  "children": [
+                    {
+                      "type": "text",
+                      "value": "Problem 1:",
+                      "position": {
+                        "start": {
+                          "line": 261,
+                          "column": 5,
+                          "offset": 8035
+                        },
+                        "end": {
+                          "line": 261,
+                          "column": 15,
+                          "offset": 8045
+                        }
+                      }
+                    }
+                  ],
+                  "position": {
+                    "start": {
+                      "line": 261,
+                      "column": 3,
+                      "offset": 8033
+                    },
+                    "end": {
+                      "line": 261,
+                      "column": 17,
+                      "offset": 8047
+                    }
+                  }
+                }
+              ],
+              "position": {
+                "start": {
+                  "line": 261,
+                  "column": 3,
+                  "offset": 8033
+                },
+                "end": {
+                  "line": 261,
+                  "column": 19,
+                  "offset": 8049
+                }
+              }
+            }
+          ],
+          "position": {
+            "start": {
+              "line": 261,
+              "column": 1,
+              "offset": 8031
+            },
+            "end": {
+              "line": 261,
+              "column": 19,
+              "offset": 8049
+            }
+          },
+          "spread": false
+        },
+        {
+          "type": "listItem",
+          "children": [
+            {
+              "type": "paragraph",
+              "children": [
+                {
+                  "type": "strong",
+                  "children": [
+                    {
+                      "type": "text",
+                      "value": "Problem 2:",
+                      "position": {
+                        "start": {
+                          "line": 262,
+                          "column": 5,
+                          "offset": 8054
+                        },
+                        "end": {
+                          "line": 262,
+                          "column": 15,
+                          "offset": 8064
+                        }
+                      }
+                    }
+                  ],
+                  "position": {
+                    "start": {
+                      "line": 262,
+                      "column": 3,
+                      "offset": 8052
+                    },
+                    "end": {
+                      "line": 262,
+                      "column": 17,
+                      "offset": 8066
+                    }
+                  }
+                }
+              ],
+              "position": {
+                "start": {
+                  "line": 262,
+                  "column": 3,
+                  "offset": 8052
+                },
+                "end": {
+                  "line": 262,
+                  "column": 19,
+                  "offset": 8068
+                }
+              }
+            }
+          ],
+          "position": {
+            "start": {
+              "line": 262,
+              "column": 1,
+              "offset": 8050
+            },
+            "end": {
+              "line": 262,
+              "column": 19,
+              "offset": 8068
+            }
+          },
+          "spread": false
+        },
+        {
+          "type": "listItem",
+          "children": [
+            {
+              "type": "paragraph",
+              "children": [
+                {
+                  "type": "strong",
+                  "children": [
+                    {
+                      "type": "text",
+                      "value": "Problem 3:",
+                      "position": {
+                        "start": {
+                          "line": 263,
+                          "column": 5,
+                          "offset": 8073
+                        },
+                        "end": {
+                          "line": 263,
+                          "column": 15,
+                          "offset": 8083
+                        }
+                      }
+                    }
+                  ],
+                  "position": {
+                    "start": {
+                      "line": 263,
+                      "column": 3,
+                      "offset": 8071
+                    },
+                    "end": {
+                      "line": 263,
+                      "column": 17,
+                      "offset": 8085
+                    }
+                  }
+                }
+              ],
+              "position": {
+                "start": {
+                  "line": 263,
+                  "column": 3,
+                  "offset": 8071
+                },
+                "end": {
+                  "line": 263,
+                  "column": 19,
+                  "offset": 8087
+                }
+              }
+            }
+          ],
+          "position": {
+            "start": {
+              "line": 263,
+              "column": 1,
+              "offset": 8069
+            },
+            "end": {
+              "line": 264,
+              "column": 1,
+              "offset": 8088
+            }
+          },
+          "spread": false
+        }
+      ],
+      "position": {
+        "start": {
+          "line": 261,
+          "column": 1,
+          "offset": 8031
+        },
+        "end": {
+          "line": 264,
+          "column": 1,
+          "offset": 8088
+        }
+      },
+      "ordered": false,
+      "spread": false
+    },
+    {
       "type": "heading",
       "children": [
         {
@@ -11467,21 +11316,6 @@
       "spread": false
     },
     {
-      "type": "thematicBreak",
-      "position": {
-        "start": {
-          "line": 289,
-          "column": 1,
-          "offset": 8593
-        },
-        "end": {
-          "line": 289,
-          "column": 4,
-          "offset": 8596
-        }
-      }
-    },
-    {
       "type": "heading",
       "children": [
         {
@@ -11582,41 +11416,24 @@
       }
     },
     {
-      "type": "blockquote",
+      "type": "paragraph",
       "children": [
         {
-          "type": "paragraph",
+          "type": "strong",
           "children": [
             {
-              "type": "strong",
-              "children": [
-                {
-                  "type": "text",
-                  "value": "Who or where - unresolved problem - why my character cares",
-                  "position": {
-                    "start": {
-                      "line": 297,
-                      "column": 5,
-                      "offset": 8749
-                    },
-                    "end": {
-                      "line": 297,
-                      "column": 63,
-                      "offset": 8807
-                    }
-                  }
-                }
-              ],
+              "type": "text",
+              "value": "Who or where - unresolved problem - why my character cares",
               "position": {
                 "start": {
                   "line": 297,
-                  "column": 3,
-                  "offset": 8747
+                  "column": 5,
+                  "offset": 8749
                 },
                 "end": {
                   "line": 297,
-                  "column": 65,
-                  "offset": 8809
+                  "column": 63,
+                  "offset": 8807
                 }
               }
             }
@@ -11638,8 +11455,8 @@
       "position": {
         "start": {
           "line": 297,
-          "column": 1,
-          "offset": 8745
+          "column": 3,
+          "offset": 8747
         },
         "end": {
           "line": 297,
@@ -11680,365 +11497,6 @@
           "offset": 8890
         }
       }
-    },
-    {
-      "type": "list",
-      "children": [
-        {
-          "type": "listItem",
-          "children": [
-            {
-              "type": "paragraph",
-              "children": [
-                {
-                  "type": "strong",
-                  "children": [
-                    {
-                      "type": "text",
-                      "value": "Hook 1 - NPC or bond:",
-                      "position": {
-                        "start": {
-                          "line": 301,
-                          "column": 5,
-                          "offset": 8896
-                        },
-                        "end": {
-                          "line": 301,
-                          "column": 26,
-                          "offset": 8917
-                        }
-                      }
-                    }
-                  ],
-                  "position": {
-                    "start": {
-                      "line": 301,
-                      "column": 3,
-                      "offset": 8894
-                    },
-                    "end": {
-                      "line": 301,
-                      "column": 28,
-                      "offset": 8919
-                    }
-                  }
-                }
-              ],
-              "position": {
-                "start": {
-                  "line": 301,
-                  "column": 3,
-                  "offset": 8894
-                },
-                "end": {
-                  "line": 301,
-                  "column": 30,
-                  "offset": 8921
-                }
-              }
-            }
-          ],
-          "position": {
-            "start": {
-              "line": 301,
-              "column": 1,
-              "offset": 8892
-            },
-            "end": {
-              "line": 301,
-              "column": 30,
-              "offset": 8921
-            }
-          },
-          "spread": false
-        },
-        {
-          "type": "listItem",
-          "children": [
-            {
-              "type": "paragraph",
-              "children": [
-                {
-                  "type": "strong",
-                  "children": [
-                    {
-                      "type": "text",
-                      "value": "Hook 2 - hometown or key location:",
-                      "position": {
-                        "start": {
-                          "line": 302,
-                          "column": 5,
-                          "offset": 8926
-                        },
-                        "end": {
-                          "line": 302,
-                          "column": 39,
-                          "offset": 8960
-                        }
-                      }
-                    }
-                  ],
-                  "position": {
-                    "start": {
-                      "line": 302,
-                      "column": 3,
-                      "offset": 8924
-                    },
-                    "end": {
-                      "line": 302,
-                      "column": 41,
-                      "offset": 8962
-                    }
-                  }
-                }
-              ],
-              "position": {
-                "start": {
-                  "line": 302,
-                  "column": 3,
-                  "offset": 8924
-                },
-                "end": {
-                  "line": 302,
-                  "column": 43,
-                  "offset": 8964
-                }
-              }
-            }
-          ],
-          "position": {
-            "start": {
-              "line": 302,
-              "column": 1,
-              "offset": 8922
-            },
-            "end": {
-              "line": 302,
-              "column": 43,
-              "offset": 8964
-            }
-          },
-          "spread": false
-        },
-        {
-          "type": "listItem",
-          "children": [
-            {
-              "type": "paragraph",
-              "children": [
-                {
-                  "type": "strong",
-                  "children": [
-                    {
-                      "type": "text",
-                      "value": "Hook 3 - origin, culture, occupation, or former community:",
-                      "position": {
-                        "start": {
-                          "line": 303,
-                          "column": 5,
-                          "offset": 8969
-                        },
-                        "end": {
-                          "line": 303,
-                          "column": 63,
-                          "offset": 9027
-                        }
-                      }
-                    }
-                  ],
-                  "position": {
-                    "start": {
-                      "line": 303,
-                      "column": 3,
-                      "offset": 8967
-                    },
-                    "end": {
-                      "line": 303,
-                      "column": 65,
-                      "offset": 9029
-                    }
-                  }
-                }
-              ],
-              "position": {
-                "start": {
-                  "line": 303,
-                  "column": 3,
-                  "offset": 8967
-                },
-                "end": {
-                  "line": 303,
-                  "column": 67,
-                  "offset": 9031
-                }
-              }
-            }
-          ],
-          "position": {
-            "start": {
-              "line": 303,
-              "column": 1,
-              "offset": 8965
-            },
-            "end": {
-              "line": 303,
-              "column": 67,
-              "offset": 9031
-            }
-          },
-          "spread": false
-        },
-        {
-          "type": "listItem",
-          "children": [
-            {
-              "type": "paragraph",
-              "children": [
-                {
-                  "type": "strong",
-                  "children": [
-                    {
-                      "type": "text",
-                      "value": "Hook 4 - defining memory or past decision:",
-                      "position": {
-                        "start": {
-                          "line": 304,
-                          "column": 5,
-                          "offset": 9036
-                        },
-                        "end": {
-                          "line": 304,
-                          "column": 47,
-                          "offset": 9078
-                        }
-                      }
-                    }
-                  ],
-                  "position": {
-                    "start": {
-                      "line": 304,
-                      "column": 3,
-                      "offset": 9034
-                    },
-                    "end": {
-                      "line": 304,
-                      "column": 49,
-                      "offset": 9080
-                    }
-                  }
-                }
-              ],
-              "position": {
-                "start": {
-                  "line": 304,
-                  "column": 3,
-                  "offset": 9034
-                },
-                "end": {
-                  "line": 304,
-                  "column": 51,
-                  "offset": 9082
-                }
-              }
-            }
-          ],
-          "position": {
-            "start": {
-              "line": 304,
-              "column": 1,
-              "offset": 9032
-            },
-            "end": {
-              "line": 304,
-              "column": 51,
-              "offset": 9082
-            }
-          },
-          "spread": false
-        },
-        {
-          "type": "listItem",
-          "children": [
-            {
-              "type": "paragraph",
-              "children": [
-                {
-                  "type": "strong",
-                  "children": [
-                    {
-                      "type": "text",
-                      "value": "Hook 5 - destiny, goal, or secret:",
-                      "position": {
-                        "start": {
-                          "line": 305,
-                          "column": 5,
-                          "offset": 9087
-                        },
-                        "end": {
-                          "line": 305,
-                          "column": 39,
-                          "offset": 9121
-                        }
-                      }
-                    }
-                  ],
-                  "position": {
-                    "start": {
-                      "line": 305,
-                      "column": 3,
-                      "offset": 9085
-                    },
-                    "end": {
-                      "line": 305,
-                      "column": 41,
-                      "offset": 9123
-                    }
-                  }
-                }
-              ],
-              "position": {
-                "start": {
-                  "line": 305,
-                  "column": 3,
-                  "offset": 9085
-                },
-                "end": {
-                  "line": 305,
-                  "column": 43,
-                  "offset": 9125
-                }
-              }
-            }
-          ],
-          "position": {
-            "start": {
-              "line": 305,
-              "column": 1,
-              "offset": 9083
-            },
-            "end": {
-              "line": 306,
-              "column": 1,
-              "offset": 9126
-            }
-          },
-          "spread": false
-        }
-      ],
-      "position": {
-        "start": {
-          "line": 301,
-          "column": 1,
-          "offset": 8892
-        },
-        "end": {
-          "line": 306,
-          "column": 1,
-          "offset": 9126
-        }
-      },
-      "ordered": false,
-      "spread": false
     },
     {
       "type": "paragraph",
@@ -12399,19 +11857,363 @@
       "spread": false
     },
     {
-      "type": "thematicBreak",
+      "type": "list",
+      "children": [
+        {
+          "type": "listItem",
+          "children": [
+            {
+              "type": "paragraph",
+              "children": [
+                {
+                  "type": "strong",
+                  "children": [
+                    {
+                      "type": "text",
+                      "value": "Hook 1 - NPC or bond:",
+                      "position": {
+                        "start": {
+                          "line": 301,
+                          "column": 5,
+                          "offset": 8896
+                        },
+                        "end": {
+                          "line": 301,
+                          "column": 26,
+                          "offset": 8917
+                        }
+                      }
+                    }
+                  ],
+                  "position": {
+                    "start": {
+                      "line": 301,
+                      "column": 3,
+                      "offset": 8894
+                    },
+                    "end": {
+                      "line": 301,
+                      "column": 28,
+                      "offset": 8919
+                    }
+                  }
+                }
+              ],
+              "position": {
+                "start": {
+                  "line": 301,
+                  "column": 3,
+                  "offset": 8894
+                },
+                "end": {
+                  "line": 301,
+                  "column": 30,
+                  "offset": 8921
+                }
+              }
+            }
+          ],
+          "position": {
+            "start": {
+              "line": 301,
+              "column": 1,
+              "offset": 8892
+            },
+            "end": {
+              "line": 301,
+              "column": 30,
+              "offset": 8921
+            }
+          },
+          "spread": false
+        },
+        {
+          "type": "listItem",
+          "children": [
+            {
+              "type": "paragraph",
+              "children": [
+                {
+                  "type": "strong",
+                  "children": [
+                    {
+                      "type": "text",
+                      "value": "Hook 2 - hometown or key location:",
+                      "position": {
+                        "start": {
+                          "line": 302,
+                          "column": 5,
+                          "offset": 8926
+                        },
+                        "end": {
+                          "line": 302,
+                          "column": 39,
+                          "offset": 8960
+                        }
+                      }
+                    }
+                  ],
+                  "position": {
+                    "start": {
+                      "line": 302,
+                      "column": 3,
+                      "offset": 8924
+                    },
+                    "end": {
+                      "line": 302,
+                      "column": 41,
+                      "offset": 8962
+                    }
+                  }
+                }
+              ],
+              "position": {
+                "start": {
+                  "line": 302,
+                  "column": 3,
+                  "offset": 8924
+                },
+                "end": {
+                  "line": 302,
+                  "column": 43,
+                  "offset": 8964
+                }
+              }
+            }
+          ],
+          "position": {
+            "start": {
+              "line": 302,
+              "column": 1,
+              "offset": 8922
+            },
+            "end": {
+              "line": 302,
+              "column": 43,
+              "offset": 8964
+            }
+          },
+          "spread": false
+        },
+        {
+          "type": "listItem",
+          "children": [
+            {
+              "type": "paragraph",
+              "children": [
+                {
+                  "type": "strong",
+                  "children": [
+                    {
+                      "type": "text",
+                      "value": "Hook 3 - origin, culture, occupation, or former community:",
+                      "position": {
+                        "start": {
+                          "line": 303,
+                          "column": 5,
+                          "offset": 8969
+                        },
+                        "end": {
+                          "line": 303,
+                          "column": 63,
+                          "offset": 9027
+                        }
+                      }
+                    }
+                  ],
+                  "position": {
+                    "start": {
+                      "line": 303,
+                      "column": 3,
+                      "offset": 8967
+                    },
+                    "end": {
+                      "line": 303,
+                      "column": 65,
+                      "offset": 9029
+                    }
+                  }
+                }
+              ],
+              "position": {
+                "start": {
+                  "line": 303,
+                  "column": 3,
+                  "offset": 8967
+                },
+                "end": {
+                  "line": 303,
+                  "column": 67,
+                  "offset": 9031
+                }
+              }
+            }
+          ],
+          "position": {
+            "start": {
+              "line": 303,
+              "column": 1,
+              "offset": 8965
+            },
+            "end": {
+              "line": 303,
+              "column": 67,
+              "offset": 9031
+            }
+          },
+          "spread": false
+        },
+        {
+          "type": "listItem",
+          "children": [
+            {
+              "type": "paragraph",
+              "children": [
+                {
+                  "type": "strong",
+                  "children": [
+                    {
+                      "type": "text",
+                      "value": "Hook 4 - defining memory or past decision:",
+                      "position": {
+                        "start": {
+                          "line": 304,
+                          "column": 5,
+                          "offset": 9036
+                        },
+                        "end": {
+                          "line": 304,
+                          "column": 47,
+                          "offset": 9078
+                        }
+                      }
+                    }
+                  ],
+                  "position": {
+                    "start": {
+                      "line": 304,
+                      "column": 3,
+                      "offset": 9034
+                    },
+                    "end": {
+                      "line": 304,
+                      "column": 49,
+                      "offset": 9080
+                    }
+                  }
+                }
+              ],
+              "position": {
+                "start": {
+                  "line": 304,
+                  "column": 3,
+                  "offset": 9034
+                },
+                "end": {
+                  "line": 304,
+                  "column": 51,
+                  "offset": 9082
+                }
+              }
+            }
+          ],
+          "position": {
+            "start": {
+              "line": 304,
+              "column": 1,
+              "offset": 9032
+            },
+            "end": {
+              "line": 304,
+              "column": 51,
+              "offset": 9082
+            }
+          },
+          "spread": false
+        },
+        {
+          "type": "listItem",
+          "children": [
+            {
+              "type": "paragraph",
+              "children": [
+                {
+                  "type": "strong",
+                  "children": [
+                    {
+                      "type": "text",
+                      "value": "Hook 5 - destiny, goal, or secret:",
+                      "position": {
+                        "start": {
+                          "line": 305,
+                          "column": 5,
+                          "offset": 9087
+                        },
+                        "end": {
+                          "line": 305,
+                          "column": 39,
+                          "offset": 9121
+                        }
+                      }
+                    }
+                  ],
+                  "position": {
+                    "start": {
+                      "line": 305,
+                      "column": 3,
+                      "offset": 9085
+                    },
+                    "end": {
+                      "line": 305,
+                      "column": 41,
+                      "offset": 9123
+                    }
+                  }
+                }
+              ],
+              "position": {
+                "start": {
+                  "line": 305,
+                  "column": 3,
+                  "offset": 9085
+                },
+                "end": {
+                  "line": 305,
+                  "column": 43,
+                  "offset": 9125
+                }
+              }
+            }
+          ],
+          "position": {
+            "start": {
+              "line": 305,
+              "column": 1,
+              "offset": 9083
+            },
+            "end": {
+              "line": 306,
+              "column": 1,
+              "offset": 9126
+            }
+          },
+          "spread": false
+        }
+      ],
       "position": {
         "start": {
-          "line": 316,
+          "line": 301,
           "column": 1,
-          "offset": 9389
+          "offset": 8892
         },
         "end": {
-          "line": 316,
-          "column": 4,
-          "offset": 9392
+          "line": 306,
+          "column": 1,
+          "offset": 9126
         }
-      }
+      },
+      "ordered": false,
+      "spread": false
     },
     {
       "type": "heading",
@@ -13554,21 +13356,6 @@
       "spread": false
     },
     {
-      "type": "thematicBreak",
-      "position": {
-        "start": {
-          "line": 347,
-          "column": 1,
-          "offset": 10291
-        },
-        "end": {
-          "line": 347,
-          "column": 4,
-          "offset": 10294
-        }
-      }
-    },
-    {
       "type": "heading",
       "children": [
         {
@@ -14688,21 +14475,6 @@
       },
       "ordered": false,
       "spread": false
-    },
-    {
-      "type": "thematicBreak",
-      "position": {
-        "start": {
-          "line": 379,
-          "column": 1,
-          "offset": 11379
-        },
-        "end": {
-          "line": 379,
-          "column": 4,
-          "offset": 11382
-        }
-      }
     },
     {
       "type": "heading",
