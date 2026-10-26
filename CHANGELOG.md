@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 3.2.3 - 2026-10-26
+
+- Publish the home-address correction. The 3.2.2 release check still expected the old index.html address.
+
 ## 3.2.2 - 2026-10-26
 
 - Keep the home address as the site directory, without an `index.html` suffix.
