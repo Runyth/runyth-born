@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 3.2.2 - 2026-10-26
+
 - Keep the home address as the site directory, without an `index.html` suffix.
 
 ## 3.2.1 - 2026-10-26
