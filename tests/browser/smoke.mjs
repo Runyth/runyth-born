@@ -139,8 +139,8 @@ try {
     const missing = await page.goto(origin + base + "nested/missing/page");
     assert.equal(missing.status(), 404);
     assert.equal(await missing.text(), await fs.readFile(path.join(directory, "404.html"), "utf8"));
-    assert.equal(await page.locator("a").getAttribute("href"), "./index.html");
-    assert.equal(await page.locator("a").evaluate((link) => link.href), origin + base + "index.html");
+    assert.equal(await page.locator("a").getAttribute("href"), "./");
+    assert.equal(await page.locator("a").evaluate((link) => link.href), origin + base);
     await page.locator("a").click();
     await page.locator(".start-form button").first().waitFor();
     await context.close();

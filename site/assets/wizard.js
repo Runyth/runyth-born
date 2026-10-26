@@ -718,7 +718,7 @@ async function deleteLocalCopy() {
   try {
     await deleteSession(session.id);
     elements.finishDialog?.close();
-    window.location.assign("./index.html");
+    window.location.assign("./");
   } catch (error) {
     deleteArmed = false;
     if (elements.finishDelete) {

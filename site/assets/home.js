@@ -147,4 +147,10 @@ async function loadCatalog() {
   }
 }
 
+const homeURL = new URL(window.location.href);
+if (homeURL.pathname.endsWith("/index.html")) {
+  homeURL.pathname = homeURL.pathname.slice(0, -"index.html".length);
+  history.replaceState(null, "", homeURL);
+}
+
 void Promise.all([loadCatalog(), renderRecent()]);
