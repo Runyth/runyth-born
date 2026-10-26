@@ -26,6 +26,10 @@ const elements = {
   questionNumber: document.getElementById("question-number"),
   questionSection: document.getElementById("question-section"),
   context: document.getElementById("question-context"),
+  openGuidance: document.getElementById("open-guidance"),
+  guidanceDialog: document.getElementById("guidance-dialog"),
+  guidanceKicker: document.getElementById("guidance-dialog-kicker"),
+  guidanceBody: document.getElementById("guidance-dialog-body"),
   label: document.getElementById("question-label"),
   answer: document.getElementById("answer"),
   markAnswered: document.getElementById("mark-answered"),
@@ -252,12 +256,76 @@ function sectionTotal(section) {
   return Math.max(0, section.end - section.start + 1);
 }
 
-function renderContext(items) {
-  elements.context.replaceChildren();
-  for (const item of items || []) {
+function guidanceHasText(blocks) {
+  return (blocks || []).some((block) => {
+    if (block?.type === "blockquote") {
+      return guidanceHasText(block.blocks);
+    }
+    return (block?.inlines || []).some((inline) => String(inline.text || "").trim() !== "");
+  });
+}
+
+function appendGuidanceInlines(parent, inlines) {
+  for (const inline of inlines || []) {
+    let node = document.createTextNode(inline.text || "");
+    if (inline.code) {
+      const code = document.createElement("code");
+      code.textContent = inline.text || "";
+      node = code;
+    }
+    if (inline.emphasis) {
+      const emphasis = document.createElement("em");
+      emphasis.append(node);
+      node = emphasis;
+    }
+    if (inline.strong) {
+      const strong = document.createElement("strong");
+      strong.append(node);
+      node = strong;
+    }
+    parent.append(node);
+  }
+}
+
+function renderGuidance(container, blocks) {
+  container.replaceChildren();
+  let list = null;
+  for (const block of blocks || []) {
+    if (block?.type === "item") {
+      if (!list) {
+        list = document.createElement("ul");
+        container.append(list);
+      }
+      const item = document.createElement("li");
+      appendGuidanceInlines(item, block.inlines);
+      list.append(item);
+      continue;
+    }
+    list = null;
+    if (block?.type === "blockquote") {
+      const quote = document.createElement("blockquote");
+      for (const part of block.blocks || []) {
+        const paragraph = document.createElement("p");
+        appendGuidanceInlines(paragraph, part.inlines);
+        quote.append(paragraph);
+      }
+      container.append(quote);
+      continue;
+    }
     const paragraph = document.createElement("p");
-    paragraph.textContent = item;
-    elements.context.append(paragraph);
+    appendGuidanceInlines(paragraph, block?.inlines);
+    container.append(paragraph);
+  }
+}
+
+function renderContext(items) {
+  renderGuidance(elements.context, items);
+  const empty = !guidanceHasText(items);
+  elements.openGuidance.disabled = empty;
+  if (empty) {
+    elements.openGuidance.title = "No guidance for this question";
+  } else {
+    elements.openGuidance.removeAttribute("title");
   }
 }
 
@@ -1057,6 +1125,17 @@ elements.orphanImport?.addEventListener("click", () => void importPreservedEntri
 elements.orphanDiscard?.addEventListener("click", () => void discardPreservedEntries().catch((error) => {
   showToast(`Could not discard the preserved copy: ${error.message}`);
 }));
+elements.openGuidance.addEventListener("click", () => {
+  const notes = question()?.context;
+  if (!guidanceHasText(notes) || elements.openGuidance.disabled) {
+    return;
+  }
+  renderGuidance(elements.guidanceBody, notes);
+  const section = currentSection();
+  elements.guidanceKicker.textContent = section ? sectionTitle(section) : "This question";
+  elements.guidanceDialog.showModal();
+});
+elements.guidanceDialog.addEventListener("close", () => elements.openGuidance.focus());
 elements.openHelp.addEventListener("click", () => elements.helpDialog.showModal());
 elements.openToc?.addEventListener("click", () => elements.toc.classList.add("open"));
 elements.closeToc?.addEventListener("click", () => elements.toc.classList.remove("open"));

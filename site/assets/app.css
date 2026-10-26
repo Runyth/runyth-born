@@ -768,9 +768,37 @@ textarea:focus {
   white-space: nowrap;
 }
 
+.context-bar {
+  display: flex;
+  min-height: 38px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+
+.context-label {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 900;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+#open-guidance {
+  min-height: 34px;
+  padding: 0.3rem 0.7rem;
+  font-size: 0.82rem;
+}
+
+#open-guidance:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
 .question-context {
   height: var(--question-context-height);
-  margin: 1.25rem 0;
+  margin: 0.45rem 0 1.25rem;
   overflow-y: auto;
   border-left: 3px solid var(--border);
   padding-left: 1rem;
@@ -778,8 +806,39 @@ textarea:focus {
   scrollbar-gutter: stable;
 }
 
-.question-context p {
+.question-context p,
+.guidance-dialog-body p {
   margin: 0.45rem 0;
+}
+
+.question-context strong,
+.guidance-dialog-body strong {
+  color: var(--text);
+  font-weight: 850;
+}
+
+.question-context em,
+.guidance-dialog-body em {
+  font-style: italic;
+}
+
+.question-context blockquote,
+.guidance-dialog-body blockquote {
+  margin: 0.55rem 0;
+  border-left: 3px solid var(--accent);
+  padding: 0.15rem 0 0.15rem 0.85rem;
+  background: rgb(124 196 255 / 0.06);
+}
+
+.question-context ul,
+.guidance-dialog-body ul {
+  margin: 0.35rem 0;
+  padding-left: 1.2rem;
+}
+
+.question-context li + li,
+.guidance-dialog-body li + li {
+  margin-top: 0.25rem;
 }
 
 .question-context:empty {
@@ -1002,6 +1061,22 @@ textarea:focus {
   padding: 1.2rem;
 }
 
+#guidance-dialog .dialog-kicker {
+  color: var(--accent);
+}
+
+.guidance-dialog-body {
+  max-height: min(60vh, 28rem);
+  overflow-y: auto;
+  color: var(--text);
+  font-size: 1.02rem;
+  line-height: 1.65;
+}
+
+.guidance-dialog-body p + p {
+  margin-top: 0.85rem;
+}
+
 .finish-dialog {
   width: min(720px, calc(100% - 2rem));
 }
@@ -1203,6 +1278,19 @@ code {
 
   .mobile-only {
     display: inline-flex;
+  }
+
+  .toc-header {
+    min-height: 56px;
+  }
+
+  #close-toc {
+    display: grid;
+    flex: 0 0 38px;
+    place-items: center;
+    margin: 0;
+    padding: 0;
+    line-height: 0;
   }
 
   .question-area {

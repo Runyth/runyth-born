@@ -69,6 +69,10 @@
           <span id="question-section"></span>
         </div>
 
+        <div class="context-bar">
+          <span class="context-label">Guidance</span>
+          <button class="button button-quiet" id="open-guidance" type="button" aria-haspopup="dialog" aria-controls="guidance-dialog" disabled>Read guidance</button>
+        </div>
         <div id="question-context" class="question-context"></div>
 
         <section class="active-question" aria-labelledby="question-label">
@@ -167,6 +171,22 @@
     </form>
   </dialog>
 
+  <dialog id="guidance-dialog" class="help-dialog" aria-labelledby="guidance-dialog-title">
+    <form method="dialog">
+      <div class="dialog-header">
+        <div>
+          <p class="dialog-kicker" id="guidance-dialog-kicker">This question</p>
+          <h2 id="guidance-dialog-title">Guidance</h2>
+        </div>
+        <button class="icon-button" value="close" aria-label="Close guidance">×</button>
+      </div>
+      <div class="dialog-body guidance-dialog-body" id="guidance-dialog-body"></div>
+      <div class="finish-dialog-actions">
+        <button class="button button-primary" value="close">Done</button>
+      </div>
+    </form>
+  </dialog>
+
   <dialog id="help-dialog" class="help-dialog">
     <form method="dialog">
       <div class="dialog-header">
@@ -176,6 +196,7 @@
       <div class="dialog-body">
         <dl class="shortcut-list">
           <div><dt>Previous / Next</dt><dd>Use the buttons, the section list, or <kbd>Alt</kbd> + <kbd>←</kbd>/<kbd>→</kbd>.</dd></div>
+          <div><dt>Read guidance</dt><dd>Open the notes above the question in a larger view. Close it with Done or Escape.</dd></div>
           <div><dt>Mark answered</dt><dd>Count a blank question as done for now, and come back to it later, or press <kbd>Alt</kbd> + <kbd>Home</kbd>.</dd></div>
           <div><dt>Filters</dt><dd>New, Skipped, and Marked narrow Previous and Next. Press one again, or Clear, to show every question. More than one can be on.</dd></div>
           <div><dt>Autosave</dt><dd>Typing pauses briefly, then the questionnaire is saved locally in this browser.</dd></div>
