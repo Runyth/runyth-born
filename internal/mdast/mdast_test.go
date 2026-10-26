@@ -88,7 +88,7 @@ func TestExtractAndSetAnswers(t *testing.T) {
 	if got := questions[0].Breadcrumb; len(got) != 2 || got[0] != "Character Template" || got[1] != "Core" {
 		t.Fatalf("breadcrumb = %#v", got)
 	}
-	if len(questions[0].Context) != 1 || questions[0].Context[0] != "Brief answers are enough." {
+	if len(questions[0].Context) != 1 || guidancePlain(questions[0].Context[0].Inlines) != "Brief answers are enough." {
 		t.Fatalf("context = %#v", questions[0].Context)
 	}
 

@@ -18,14 +18,30 @@ import (
 type Document map[string]any
 
 type Question struct {
-	Path         []int    `json:"-"`
-	Label        string   `json:"label"`
-	Breadcrumb   []string `json:"breadcrumb"`
-	Context      []string `json:"context,omitempty"`
-	Answer       string   `json:"answer"`
-	ID           string   `json:"id"`
-	FallbackID   string   `json:"fallback_id"`
-	LabelOrdinal int      `json:"label_ordinal"`
+	Path         []int           `json:"-"`
+	Label        string          `json:"label"`
+	Breadcrumb   []string        `json:"breadcrumb"`
+	Context      []GuidanceBlock `json:"context,omitempty"`
+	Answer       string          `json:"answer"`
+	ID           string          `json:"id"`
+	FallbackID   string          `json:"fallback_id"`
+	LabelOrdinal int             `json:"label_ordinal"`
+}
+
+// GuidanceBlock is one paragraph, citation, or example item from the template.
+// Inline marks are kept so the wizard can show the original Markdown styling.
+type GuidanceBlock struct {
+	Type    string           `json:"type"`
+	Inlines []GuidanceInline `json:"inlines,omitempty"`
+	Blocks  []GuidanceBlock  `json:"blocks,omitempty"`
+}
+
+// GuidanceInline is one styled run inside a guidance block.
+type GuidanceInline struct {
+	Text     string `json:"text"`
+	Strong   bool   `json:"strong,omitempty"`
+	Emphasis bool   `json:"emphasis,omitempty"`
+	Code     bool   `json:"code,omitempty"`
 }
 
 func LoadFile(path string) (Document, error) {
@@ -155,7 +171,7 @@ func ExtractQuestions(document Document) ([]Question, error) {
 	}
 	scanner.walk(map[string]any(document), nil, false)
 	if len(scanner.questions) > 0 && len(scanner.preamble) > 0 {
-		scanner.questions[0].Context = append(append([]string(nil), scanner.preamble...), scanner.questions[0].Context...)
+		scanner.questions[0].Context = append(append([]GuidanceBlock(nil), scanner.preamble...), scanner.questions[0].Context...)
 	}
 	return scanner.questions, nil
 }
@@ -274,8 +290,8 @@ func PlainText(node map[string]any) string {
 type questionScanner struct {
 	questions     []Question
 	headings      []string
-	guidance      [7][]string
-	preamble      []string
+	guidance      [7][]GuidanceBlock
+	preamble      []GuidanceBlock
 	depth         int
 	labelOrdinals map[string]int
 	exactOrdinals map[string]int
@@ -283,7 +299,14 @@ type questionScanner struct {
 
 func (scanner *questionScanner) walk(node map[string]any, path []int, insideListItem bool) {
 	switch nodeType(node) {
-	case "blockquote", "table", "code", "html", "footnoteDefinition":
+	case "table", "code", "html", "footnoteDefinition":
+		return
+	case "blockquote":
+		if !insideListItem {
+			if block, ok := guidanceBlockquote(node); ok {
+				scanner.addBlock(block)
+			}
+		}
 		return
 	case "heading":
 		depth := intValue(node, "depth", 1)
@@ -306,9 +329,8 @@ func (scanner *questionScanner) walk(node map[string]any, path []int, insideList
 
 	case "paragraph":
 		if !insideListItem {
-			text := cleanText(PlainText(node))
-			if text != "" {
-				scanner.addContext(text)
+			if block, ok := guidanceParagraph(node); ok {
+				scanner.addBlock(block)
 			}
 		}
 		return
@@ -333,10 +355,12 @@ func (scanner *questionScanner) walk(node map[string]any, path []int, insideList
 			return
 		}
 
-		text := cleanText(PlainText(node))
-		if text != "" && !containsQuestion(node) {
-			scanner.addContext("- " + text)
+		if !containsQuestion(node) {
+			if block, ok := guidanceItem(node); ok {
+				scanner.addBlock(block)
+			}
 		}
+		return
 	}
 
 	nodeChildren, ok := children(node)
@@ -382,24 +406,106 @@ func (scanner *questionScanner) addQuestion(paragraph map[string]any, path []int
 	})
 }
 
-func (scanner *questionScanner) addContext(text string) {
-	text = cleanText(text)
-	if text == "" || scanner.depth >= len(scanner.guidance) {
+func (scanner *questionScanner) addBlock(block GuidanceBlock) {
+	if scanner.depth >= len(scanner.guidance) {
 		return
 	}
 	if scanner.depth < 2 {
-		scanner.preamble = append(scanner.preamble, text)
+		scanner.preamble = append(scanner.preamble, block)
 		return
 	}
-	scanner.guidance[scanner.depth] = append(scanner.guidance[scanner.depth], text)
+	scanner.guidance[scanner.depth] = append(scanner.guidance[scanner.depth], block)
 }
 
-func (scanner *questionScanner) questionContext() []string {
-	var context []string
+func (scanner *questionScanner) questionContext() []GuidanceBlock {
+	var context []GuidanceBlock
 	for depth := 2; depth <= scanner.depth && depth < len(scanner.guidance); depth++ {
 		context = append(context, scanner.guidance[depth]...)
 	}
-	return append([]string(nil), context...)
+	return append([]GuidanceBlock(nil), context...)
+}
+
+func guidanceParagraph(node map[string]any) (GuidanceBlock, bool) {
+	inlines := guidanceInlines(node, false, false, false)
+	if guidancePlain(inlines) == "" {
+		return GuidanceBlock{}, false
+	}
+	return GuidanceBlock{Type: "paragraph", Inlines: inlines}, true
+}
+
+func guidanceItem(node map[string]any) (GuidanceBlock, bool) {
+	inlines := guidanceInlines(node, false, false, false)
+	if guidancePlain(inlines) == "" {
+		return GuidanceBlock{}, false
+	}
+	return GuidanceBlock{Type: "item", Inlines: inlines}, true
+}
+
+func guidanceBlockquote(node map[string]any) (GuidanceBlock, bool) {
+	values, ok := children(node)
+	if !ok {
+		return GuidanceBlock{}, false
+	}
+	blocks := make([]GuidanceBlock, 0, len(values))
+	for _, value := range values {
+		child, ok := value.(map[string]any)
+		if !ok || nodeType(child) != "paragraph" {
+			continue
+		}
+		paragraph, ok := guidanceParagraph(child)
+		if ok {
+			blocks = append(blocks, paragraph)
+		}
+	}
+	if len(blocks) == 0 {
+		return GuidanceBlock{}, false
+	}
+	return GuidanceBlock{Type: "blockquote", Blocks: blocks}, true
+}
+
+func guidanceInlines(node map[string]any, strong, emphasis, code bool) []GuidanceInline {
+	switch nodeType(node) {
+	case "text":
+		value := stringValue(node, "value")
+		if value == "" {
+			return nil
+		}
+		return []GuidanceInline{{Text: value, Strong: strong, Emphasis: emphasis, Code: code}}
+	case "inlineCode":
+		return []GuidanceInline{{Text: stringValue(node, "value"), Strong: strong, Emphasis: emphasis, Code: true}}
+	case "break":
+		return []GuidanceInline{{Text: "\n", Strong: strong, Emphasis: emphasis}}
+	case "strong":
+		return guidanceChildInlines(node, true, emphasis, code)
+	case "emphasis":
+		return guidanceChildInlines(node, strong, true, code)
+	default:
+		return guidanceChildInlines(node, strong, emphasis, code)
+	}
+}
+
+func guidanceChildInlines(node map[string]any, strong, emphasis, code bool) []GuidanceInline {
+	values, ok := children(node)
+	if !ok {
+		return nil
+	}
+	var inlines []GuidanceInline
+	for _, value := range values {
+		child, ok := value.(map[string]any)
+		if !ok {
+			continue
+		}
+		inlines = append(inlines, guidanceInlines(child, strong, emphasis, code)...)
+	}
+	return inlines
+}
+
+func guidancePlain(inlines []GuidanceInline) string {
+	var builder strings.Builder
+	for _, inline := range inlines {
+		builder.WriteString(inline.Text)
+	}
+	return strings.TrimSpace(builder.String())
 }
 
 func questionParagraph(listItem map[string]any, listItemPath []int) (map[string]any, []int, bool) {

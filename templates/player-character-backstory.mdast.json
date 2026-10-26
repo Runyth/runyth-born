@@ -293,24 +293,41 @@
       }
     },
     {
-      "type": "paragraph",
+      "type": "blockquote",
       "children": [
         {
-          "type": "strong",
+          "type": "paragraph",
           "children": [
             {
-              "type": "text",
-              "value": "Important to me",
+              "type": "strong",
+              "children": [
+                {
+                  "type": "text",
+                  "value": "Important to me",
+                  "position": {
+                    "start": {
+                      "line": 19,
+                      "column": 5,
+                      "offset": 864
+                    },
+                    "end": {
+                      "line": 19,
+                      "column": 20,
+                      "offset": 879
+                    }
+                  }
+                }
+              ],
               "position": {
                 "start": {
                   "line": 19,
-                  "column": 5,
-                  "offset": 864
+                  "column": 3,
+                  "offset": 862
                 },
                 "end": {
                   "line": 19,
-                  "column": 20,
-                  "offset": 879
+                  "column": 22,
+                  "offset": 881
                 }
               }
             }
@@ -328,19 +345,7 @@
             }
           }
         }
-      ],
-      "position": {
-        "start": {
-          "line": 19,
-          "column": 3,
-          "offset": 862
-        },
-        "end": {
-          "line": 19,
-          "column": 22,
-          "offset": 881
-        }
-      }
+      ]
     },
     {
       "type": "paragraph",
@@ -11416,24 +11421,41 @@
       }
     },
     {
-      "type": "paragraph",
+      "type": "blockquote",
       "children": [
         {
-          "type": "strong",
+          "type": "paragraph",
           "children": [
             {
-              "type": "text",
-              "value": "Who or where - unresolved problem - why my character cares",
+              "type": "strong",
+              "children": [
+                {
+                  "type": "text",
+                  "value": "Who or where - unresolved problem - why my character cares",
+                  "position": {
+                    "start": {
+                      "line": 297,
+                      "column": 5,
+                      "offset": 8749
+                    },
+                    "end": {
+                      "line": 297,
+                      "column": 63,
+                      "offset": 8807
+                    }
+                  }
+                }
+              ],
               "position": {
                 "start": {
                   "line": 297,
-                  "column": 5,
-                  "offset": 8749
+                  "column": 3,
+                  "offset": 8747
                 },
                 "end": {
                   "line": 297,
-                  "column": 63,
-                  "offset": 8807
+                  "column": 65,
+                  "offset": 8809
                 }
               }
             }
@@ -11451,19 +11473,7 @@
             }
           }
         }
-      ],
-      "position": {
-        "start": {
-          "line": 297,
-          "column": 3,
-          "offset": 8747
-        },
-        "end": {
-          "line": 297,
-          "column": 65,
-          "offset": 8809
-        }
-      }
+      ]
     },
     {
       "type": "paragraph",
