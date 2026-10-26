@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Keep the home address as the site directory, without an `index.html` suffix.
+
 ## 3.2.1 - 2026-10-26
 
 - Keep bold, italics, and citation styling from the questionnaire in the guidance shown with each question.
