@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+## 3.2.4 - 2026-11-01
+
+- Rename test fixture player names to neutral placeholders.
 ## 3.2.3 - 2026-10-26
 
 - Publish the home-address correction. The 3.2.2 release check still expected the old index.html address.
