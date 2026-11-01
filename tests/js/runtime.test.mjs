@@ -23,8 +23,8 @@ test("duplicate labels cannot transfer answers into a different moved section", 
 
 test("globally unique labels reconcile after a section move", async () => {
   const result = await callCore("reconcile", { source: source([question]),
-    saved_questions: [{ ...question, id: "old#1", answer: "Akito" }] });
-  assert.equal(result.questions[0].answer, "Akito");
+    saved_questions: [{ ...question, id: "old#1", answer: "Player" }] });
+  assert.equal(result.questions[0].answer, "Player");
 });
 
 test("multiline Markdown punctuation remains literal and inside its list item", async () => {
@@ -35,7 +35,7 @@ test("multiline Markdown punctuation remains literal and inside its list item", 
 
 test("reconciliation reports unmatched saved answers instead of discarding them", async () => {
   const result = await callCore("reconcile", { source: source([question]),
-    saved_questions: [{ ...question, answer: "Akito" },
+    saved_questions: [{ ...question, answer: "Player" },
       { id: "removed\u001fage#1", fallback_id: "age#1", label: "Age", breadcrumb: ["Example", "Core"], answer: "Old age" }] });
   assert.deepEqual(result.reconciliation, {
     exact: 1, fallback: 0, unmatched: 1,
@@ -55,7 +55,7 @@ test("ambiguous duplicate labels stay unmatched and are reported", async () => {
 
 test("unique-label fallback matches are counted separately from exact matches", async () => {
   const result = await callCore("reconcile", { source: source([question]),
-    saved_questions: [{ ...question, id: "old#1", answer: "Akito" }] });
+    saved_questions: [{ ...question, id: "old#1", answer: "Player" }] });
   assert.equal(result.reconciliation.exact, 0);
   assert.equal(result.reconciliation.fallback, 1);
   assert.equal(result.reconciliation.unmatched, 0);

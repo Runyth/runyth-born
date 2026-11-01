@@ -83,7 +83,7 @@ try {
     console.log(`Checking ${base}`);
     await page.goto(origin + base);
     await page.locator(".start-form button").first().waitFor();
-    await page.locator(".start-form input").first().fill("Akito");
+    await page.locator(".start-form input").first().fill("Player");
     await page.locator(".start-form button").first().click();
     await loaded(page);
     assert.ok(page.url().startsWith(origin + base + "wizard.html?session="));

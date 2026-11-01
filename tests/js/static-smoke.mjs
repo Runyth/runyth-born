@@ -14,10 +14,10 @@ for (const entry of catalog.templates) {
   assert.equal(initial.fingerprint, entry.fingerprint);
   assert.equal(initial.sections.length, entry.section_count);
   const saved = structuredClone(initial.questions);
-  saved[0].answer = "Akito *literal*\n# still an answer";
+  saved[0].answer = "Player *literal*\n# still an answer";
   const resumed = await callCore("reconcile", { source, saved_questions: saved });
   assert.equal(resumed.questions[0].answer, saved[0].answer);
-  assert.ok(resumed.markdown.includes("Akito \\*literal\\*"));
+  assert.ok(resumed.markdown.includes("Player \\*literal\\*"));
   assert.ok(resumed.markdown.includes("\\# still an answer"));
   assert.equal(resumed.sections[0].answered, initial.sections[0].answered + (initial.questions[0].answer ? 0 : 1));
   saved[0].answer = "";

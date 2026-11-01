@@ -271,10 +271,10 @@ test("a failing IndexedDB position save falls back to localStorage", async () =>
 
 test("preserved answer copies are stored and recoverable", async () => {
   const mock = await autoStorageMock();
-  await mock.module.saveRecovery("test", { reason: "reconcile", entries: [{ label: "Name", answer: "Akito" }] });
+  await mock.module.saveRecovery("test", { reason: "reconcile", entries: [{ label: "Name", answer: "Player" }] });
   const loaded = await mock.module.loadRecovery("test");
   assert.equal(loaded.reason, "reconcile");
-  assert.deepEqual(loaded.entries, [{ id: "", fallback_id: "", label: "Name", breadcrumb: [], answer: "Akito" }]);
+  assert.deepEqual(loaded.entries, [{ id: "", fallback_id: "", label: "Name", breadcrumb: [], answer: "Player" }]);
 });
 
 test("a fallback recovery record stays reviewable after the primary store recovers", async () => {

@@ -15,7 +15,7 @@ function exampleSession() {
     template_filename: "example.mdast.json",
     template_fingerprint: "abc123",
     template_name: "Example",
-    player_name: "Akito",
+    player_name: "Player",
     created_at: "2026-09-11T12:00:00.000Z",
     updated_at: "2026-09-11T12:01:00.000Z",
     current_question: 1,
@@ -26,7 +26,7 @@ function exampleSession() {
       label: "Name",
       breadcrumb: ["Example", "Core"],
       context: ["Context"],
-      answer: "Akito",
+      answer: "Player",
       label_ordinal: 1,
     }],
   };
@@ -43,7 +43,7 @@ test("portable resume payload round-trips only the state needed to reconcile ans
   assert.deepEqual(restored.questions, [{
     id: "core\u001fname#1",
     fallback_id: "name#1",
-    answer: "Akito",
+    answer: "Player",
   }]);
 });
 
@@ -90,8 +90,8 @@ test("session helpers create cryptographically-sized local identifiers", () => {
     filename: "example.mdast.json",
     fingerprint: "abc",
     name: "Example",
-  }, "  Akito   Example  ");
-  assert.equal(session.player_name, "Akito Example");
+  }, "  Player   Example  ");
+  assert.equal(session.player_name, "Player Example");
   assert.equal(session.template_id, "template-id");
   assert.equal(session.questions.length, 0);
 });
@@ -114,7 +114,7 @@ test("plain JSON encoding works without compression support", async () => {
     globalThis.CompressionStream = undefined;
     const payload = await encodeResumePayload(exampleSession());
     assert.ok(payload.startsWith("j."));
-    assert.equal((await decodeResumePayload(payload)).player_name, "Akito");
+    assert.equal((await decodeResumePayload(payload)).player_name, "Player");
   } finally {
     globalThis.CompressionStream = original;
   }
